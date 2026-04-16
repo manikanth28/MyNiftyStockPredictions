@@ -1,0 +1,13 @@
+{
+  "name": "stock-recommendation-platform",
+  "private": true,
+  "workspaces": [
+    "apps/web"
+  ],
+  "scripts": {
+    "dev:web": "npm run dev --workspace web",
+    "build:web": "npm run build --workspace web",
+    "start:web": "npm run start --workspace web",
+    "test:api": "python -m unittest discover -s services/api/tests -t services/api"
+  }
+}

@@ -1,0 +1,20 @@
+services:
+  - type: web
+    name: stock-recommendation-web
+    env: node
+    plan: free
+    rootDir: .
+    buildCommand: npm install && npm run build:web
+    startCommand: npm run start --workspace web -- --hostname 0.0.0.0 --port $PORT
+    autoDeploy: true
+    healthCheckPath: /api/healthz
+
+  - type: web
+    name: stock-recommendation-api
+    env: python
+    plan: free
+    rootDir: services/api
+    buildCommand: pip install .
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    autoDeploy: true
+    healthCheckPath: /healthz

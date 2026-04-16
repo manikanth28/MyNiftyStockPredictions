@@ -1,0 +1,870 @@
+{
+  "market": "Indian Equities",
+  "exchange": "NSE",
+  "universe": "Nifty 500",
+  "profiles": [
+    {
+      "id": "swing",
+      "label": "Swing",
+      "window": "5-20 trading days"
+    },
+    {
+      "id": "position",
+      "label": "Position",
+      "window": "20-60 trading days"
+    },
+    {
+      "id": "long_term",
+      "label": "Long-term",
+      "window": "3-12 months"
+    }
+  ],
+  "currentBatch": {
+    "batchDate": "2026-04-15",
+    "generatedAt": "2026-04-15T18:15:00+05:30",
+    "recommendations": [
+      {
+        "symbol": "RELIANCE",
+        "companyName": "Reliance Industries Ltd",
+        "sector": "Energy",
+        "marketCapBucket": "Large Cap",
+        "liquidityTier": "Tier 1",
+        "currentMarketPrice": 2998.0,
+        "profiles": {
+          "swing": {
+            "conviction": "High",
+            "entryPrice": 2948.0,
+            "targetPrice": 3195.0,
+            "stopLoss": 2855.0,
+            "expectedReturnPct": 8.38,
+            "riskReward": 2.66,
+            "summary": "Price has reclaimed the 20-day range high on expanding volume while refining margins and digital business commentary remain supportive.",
+            "drivers": [
+              "20-day breakout with volume confirmation",
+              "Sector rotation back into index heavyweights",
+              "Stable cash generation supports downside control"
+            ],
+            "technicalSignals": [
+              {
+                "name": "20D breakout",
+                "value": "Bullish"
+              },
+              {
+                "name": "ATR trend",
+                "value": "Moderate expansion"
+              },
+              {
+                "name": "Relative strength vs Nifty 50",
+                "value": "Improving"
+              }
+            ],
+            "fundamentalSignals": [
+              {
+                "name": "Operating cash flow",
+                "value": "Resilient"
+              },
+              {
+                "name": "Consensus revisions",
+                "value": "Stable to positive"
+              },
+              {
+                "name": "Balance sheet",
+                "value": "Manageable leverage"
+              }
+            ],
+            "newsContext": [
+              "Market focus remains on energy margin recovery.",
+              "Retail and digital segments continue to improve quality of earnings."
+            ]
+          },
+          "position": {
+            "conviction": "High",
+            "entryPrice": 2925.0,
+            "targetPrice": 3330.0,
+            "stopLoss": 2780.0,
+            "expectedReturnPct": 13.85,
+            "riskReward": 2.79,
+            "summary": "The medium-term setup benefits from improving earnings breadth and stronger sponsorship from index-linked flows.",
+            "drivers": [
+              "Medium-term trend remains above 50-day support",
+              "Earnings mix improving across energy and consumer platforms",
+              "Liquidity profile supports position sizing"
+            ],
+            "technicalSignals": [
+              {
+                "name": "50D trend",
+                "value": "Uptrend"
+              },
+              {
+                "name": "Volatility regime",
+                "value": "Contained"
+              },
+              {
+                "name": "Support zone",
+                "value": "2860-2890"
+              }
+            ],
+            "fundamentalSignals": [
+              {
+                "name": "Revenue diversity",
+                "value": "High"
+              },
+              {
+                "name": "Return profile",
+                "value": "Improving"
+              },
+              {
+                "name": "Index relevance",
+                "value": "High"
+              }
+            ],
+            "newsContext": [
+              "Management commentary continues to anchor medium-term confidence.",
+              "Institutional ownership keeps the liquidity backdrop strong."
+            ]
+          },
+          "long_term": {
+            "conviction": "Medium",
+            "entryPrice": 2890.0,
+            "targetPrice": 3520.0,
+            "stopLoss": 2650.0,
+            "expectedReturnPct": 21.8,
+            "riskReward": 2.63,
+            "summary": "Long-term upside comes from platform diversification, but the thesis depends more on execution and earnings compounding than on short-term momentum.",
+            "drivers": [
+              "Diversified business mix",
+              "Large cap compounding potential",
+              "Multi-segment earnings optionality"
+            ],
+            "technicalSignals": [
+              {
+                "name": "200D trend",
+                "value": "Positive"
+              },
+              {
+                "name": "Long-term support",
+                "value": "2650"
+              }
+            ],
+            "fundamentalSignals": [
+              {
+                "name": "Capital allocation",
+                "value": "Key watchpoint"
+              },
+              {
+                "name": "Earnings durability",
+                "value": "Improving"
+              }
+            ],
+            "newsContext": [
+              "Long-term case remains tied to execution quality across major segments."
+            ]
+          }
+        }
+      },
+      {
+        "symbol": "TCS",
+        "companyName": "Tata Consultancy Services Ltd",
+        "sector": "Information Technology",
+        "marketCapBucket": "Large Cap",
+        "liquidityTier": "Tier 1",
+        "currentMarketPrice": 4128.0,
+        "profiles": {
+          "swing": {
+            "conviction": "Medium",
+            "entryPrice": 4085.0,
+            "targetPrice": 4300.0,
+            "stopLoss": 3990.0,
+            "expectedReturnPct": 5.26,
+            "riskReward": 2.26,
+            "summary": "The stock is stabilizing above near-term support as defensives regain leadership and downside volatility compresses.",
+            "drivers": [
+              "Support held after post-results digestion",
+              "Defensive sector bid improving",
+              "Volatility compression supports tactical entries"
+            ],
+            "technicalSignals": [
+              {
+                "name": "Range structure",
+                "value": "Constructive"
+              },
+              {
+                "name": "Momentum",
+                "value": "Neutral to positive"
+              },
+              {
+                "name": "Volume pattern",
+                "value": "Normal"
+              }
+            ],
+            "fundamentalSignals": [
+              {
+                "name": "Margin profile",
+                "value": "Stable"
+              },
+              {
+                "name": "Order book",
+                "value": "Healthy"
+              },
+              {
+                "name": "Cash return policy",
+                "value": "Supportive"
+              }
+            ],
+            "newsContext": [
+              "Investors continue to favor quality cash-generative IT names during uncertain macro windows."
+            ]
+          },
+          "position": {
+            "conviction": "Medium",
+            "entryPrice": 4040.0,
+            "targetPrice": 4475.0,
+            "stopLoss": 3885.0,
+            "expectedReturnPct": 10.77,
+            "riskReward": 2.81,
+            "summary": "A slower but steadier position setup is forming as the market prices in resilient large-deal execution and balance sheet strength.",
+            "drivers": [
+              "Quality bias in institutional portfolios",
+              "Strong balance sheet and cash generation",
+              "Trend base forming above medium-term support"
+            ],
+            "technicalSignals": [
+              {
+                "name": "50D base",
+                "value": "Forming"
+              },
+              {
+                "name": "Relative drawdown",
+                "value": "Contained"
+              }
+            ],
+            "fundamentalSignals": [
+              {
+                "name": "Client concentration risk",
+                "value": "Manageable"
+              },
+              {
+                "name": "Earnings quality",
+                "value": "High"
+              }
+            ],
+            "newsContext": [
+              "Management tone on demand resilience remains a central medium-term driver."
+            ]
+          },
+          "long_term": {
+            "conviction": "High",
+            "entryPrice": 3980.0,
+            "targetPrice": 4680.0,
+            "stopLoss": 3725.0,
+            "expectedReturnPct": 17.59,
+            "riskReward": 2.75,
+            "summary": "TCS fits the long-term quality compounder bucket with durable margins, disciplined capital returns, and strong institutional ownership.",
+            "drivers": [
+              "Quality compounder profile",
+              "Durable client relationships",
+              "Capital return discipline"
+            ],
+            "technicalSignals": [
+              {
+                "name": "200D trend",
+                "value": "Stable positive"
+              }
+            ],
+            "fundamentalSignals": [
+              {
+                "name": "ROCE",
+                "value": "Strong"
+              },
+              {
+                "name": "Free cash flow",
+                "value": "Consistent"
+              }
+            ],
+            "newsContext": [
+              "Long-term returns depend on continued execution in large transformation deals and cost discipline."
+            ]
+          }
+        }
+      },
+      {
+        "symbol": "HDFCBANK",
+        "companyName": "HDFC Bank Ltd",
+        "sector": "Financials",
+        "marketCapBucket": "Large Cap",
+        "liquidityTier": "Tier 1",
+        "currentMarketPrice": 1702.0,
+        "profiles": {
+          "swing": {
+            "conviction": "Medium",
+            "entryPrice": 1688.0,
+            "targetPrice": 1778.0,
+            "stopLoss": 1646.0,
+            "expectedReturnPct": 5.33,
+            "riskReward": 2.14,
+            "summary": "The swing setup improves as the stock reclaims short-term moving averages and private bank breadth strengthens.",
+            "drivers": [
+              "Reclaim of short-term moving average cluster",
+              "Private bank leadership improving",
+              "High liquidity reduces execution friction"
+            ],
+            "technicalSignals": [
+              {
+                "name": "20D trend",
+                "value": "Turning positive"
+              },
+              {
+                "name": "Support zone",
+                "value": "1650-1660"
+              }
+            ],
+            "fundamentalSignals": [
+              {
+                "name": "Deposit franchise",
+                "value": "Strong"
+              },
+              {
+                "name": "Asset quality",
+                "value": "Stable"
+              }
+            ],
+            "newsContext": [
+              "Market attention remains on margin stabilization and post-merger execution."
+            ]
+          },
+          "position": {
+            "conviction": "High",
+            "entryPrice": 1668.0,
+            "targetPrice": 1825.0,
+            "stopLoss": 1605.0,
+            "expectedReturnPct": 9.41,
+            "riskReward": 2.49,
+            "summary": "A position trade is attractive if balance-sheet normalization continues and the stock sustains leadership within private banks.",
+            "drivers": [
+              "High-quality private banking franchise",
+              "Improving medium-term sector breadth",
+              "Balance-sheet normalization narrative"
+            ],
+            "technicalSignals": [
+              {
+                "name": "50D trend",
+                "value": "Base building"
+              },
+              {
+                "name": "Relative strength vs Bank Nifty",
+                "value": "Improving"
+              }
+            ],
+            "fundamentalSignals": [
+              {
+                "name": "Provisioning profile",
+                "value": "Comfortable"
+              },
+              {
+                "name": "Loan growth",
+                "value": "Healthy"
+              }
+            ],
+            "newsContext": [
+              "Institutional positioning may improve if margins and growth normalize together."
+            ]
+          },
+          "long_term": {
+            "conviction": "High",
+            "entryPrice": 1645.0,
+            "targetPrice": 1910.0,
+            "stopLoss": 1555.0,
+            "expectedReturnPct": 16.11,
+            "riskReward": 2.94,
+            "summary": "The long-term case remains centered on franchise quality, scale advantages, and consistent compounding in Indian financials.",
+            "drivers": [
+              "Core franchise strength",
+              "Long runway in retail and commercial lending",
+              "Institutional core holding profile"
+            ],
+            "technicalSignals": [
+              {
+                "name": "200D trend",
+                "value": "Gradually improving"
+              }
+            ],
+            "fundamentalSignals": [
+              {
+                "name": "ROA/ROE profile",
+                "value": "Attractive"
+              },
+              {
+                "name": "Deposit moat",
+                "value": "Strong"
+              }
+            ],
+            "newsContext": [
+              "Long-term thesis improves further as integration and funding metrics stabilize."
+            ]
+          }
+        }
+      }
+    ]
+  },
+  "history": [
+    {
+      "batchDate": "2026-04-14",
+      "publishedAt": "2026-04-14T18:20:00+05:30",
+      "recommendations": [
+        {
+          "symbol": "RELIANCE",
+          "companyName": "Reliance Industries Ltd",
+          "sector": "Energy",
+          "profiles": {
+            "swing": {
+              "conviction": "High",
+              "entryPrice": 2918.0,
+              "targetPrice": 3120.0,
+              "stopLoss": 2835.0,
+              "summary": "Breakout continuation setup supported by stable breadth in index heavyweights.",
+              "outcome": {
+                "result": "target_hit",
+                "evaluatedOn": "2026-04-15",
+                "holdingDays": 1,
+                "returnPct": 6.92,
+                "notes": "Target was hit during the next session as energy leadership held."
+              }
+            },
+            "position": {
+              "conviction": "High",
+              "entryPrice": 2895.0,
+              "targetPrice": 3290.0,
+              "stopLoss": 2775.0,
+              "summary": "Position idea stayed constructive but remained open after the first evaluation window.",
+              "outcome": {
+                "result": "open",
+                "evaluatedOn": "2026-04-15",
+                "holdingDays": 1,
+                "returnPct": 2.14,
+                "notes": "Trade remains open above entry and below the medium-term target."
+              }
+            },
+            "long_term": {
+              "conviction": "Medium",
+              "entryPrice": 2860.0,
+              "targetPrice": 3470.0,
+              "stopLoss": 2640.0,
+              "summary": "Long-term thesis stayed intact with only early mark-to-market progress.",
+              "outcome": {
+                "result": "open",
+                "evaluatedOn": "2026-04-15",
+                "holdingDays": 1,
+                "returnPct": 1.35,
+                "notes": "Long-term recommendation is still active and under evaluation."
+              }
+            }
+          }
+        },
+        {
+          "symbol": "TCS",
+          "companyName": "Tata Consultancy Services Ltd",
+          "sector": "Information Technology",
+          "profiles": {
+            "swing": {
+              "conviction": "Medium",
+              "entryPrice": 4045.0,
+              "targetPrice": 4230.0,
+              "stopLoss": 3950.0,
+              "summary": "Defensive follow-through failed to hold as IT breadth weakened intraday.",
+              "outcome": {
+                "result": "stop_loss_hit",
+                "evaluatedOn": "2026-04-15",
+                "holdingDays": 1,
+                "returnPct": -2.35,
+                "notes": "Short-term setup failed when the support zone broke on weak sector breadth."
+              }
+            },
+            "position": {
+              "conviction": "Medium",
+              "entryPrice": 4010.0,
+              "targetPrice": 4420.0,
+              "stopLoss": 3870.0,
+              "summary": "Position trade was invalidated early when the base failed to hold.",
+              "outcome": {
+                "result": "stop_loss_hit",
+                "evaluatedOn": "2026-04-15",
+                "holdingDays": 1,
+                "returnPct": -3.49,
+                "notes": "The medium-term setup was stopped out before follow-through could develop."
+              }
+            },
+            "long_term": {
+              "conviction": "High",
+              "entryPrice": 3945.0,
+              "targetPrice": 4630.0,
+              "stopLoss": 3700.0,
+              "summary": "Long-term quality thesis remained active despite limited early upside.",
+              "outcome": {
+                "result": "open",
+                "evaluatedOn": "2026-04-15",
+                "holdingDays": 1,
+                "returnPct": 0.88,
+                "notes": "Long-term recommendation remains open with limited early movement."
+              }
+            }
+          }
+        },
+        {
+          "symbol": "HDFCBANK",
+          "companyName": "HDFC Bank Ltd",
+          "sector": "Financials",
+          "profiles": {
+            "swing": {
+              "conviction": "Medium",
+              "entryPrice": 1665.0,
+              "targetPrice": 1750.0,
+              "stopLoss": 1628.0,
+              "summary": "Private banking leadership accelerated and delivered the swing target quickly.",
+              "outcome": {
+                "result": "target_hit",
+                "evaluatedOn": "2026-04-15",
+                "holdingDays": 1,
+                "returnPct": 5.11,
+                "notes": "Target was reached on the next session as private banks led the move."
+              }
+            },
+            "position": {
+              "conviction": "High",
+              "entryPrice": 1655.0,
+              "targetPrice": 1772.0,
+              "stopLoss": 1598.0,
+              "summary": "Medium-term bank leadership converted into a successful position trade.",
+              "outcome": {
+                "result": "target_hit",
+                "evaluatedOn": "2026-04-15",
+                "holdingDays": 1,
+                "returnPct": 7.08,
+                "notes": "The position setup reached its target as bank momentum accelerated."
+              }
+            },
+            "long_term": {
+              "conviction": "High",
+              "entryPrice": 1630.0,
+              "targetPrice": 1885.0,
+              "stopLoss": 1548.0,
+              "summary": "The longer-duration compounding thesis stayed open with favorable early progress.",
+              "outcome": {
+                "result": "open",
+                "evaluatedOn": "2026-04-15",
+                "holdingDays": 1,
+                "returnPct": 1.42,
+                "notes": "Long-term idea remains active and above the original entry."
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "batchDate": "2026-04-11",
+      "publishedAt": "2026-04-11T18:10:00+05:30",
+      "recommendations": [
+        {
+          "symbol": "RELIANCE",
+          "companyName": "Reliance Industries Ltd",
+          "sector": "Energy",
+          "profiles": {
+            "swing": {
+              "conviction": "High",
+              "entryPrice": 2886.0,
+              "targetPrice": 3065.0,
+              "stopLoss": 2805.0,
+              "summary": "Breakout attempt failed when follow-through volume did not sustain.",
+              "outcome": {
+                "result": "stop_loss_hit",
+                "evaluatedOn": "2026-04-14",
+                "holdingDays": 1,
+                "returnPct": -2.81,
+                "notes": "The swing idea failed when the post-breakout range was lost the next day."
+              }
+            },
+            "position": {
+              "conviction": "High",
+              "entryPrice": 2865.0,
+              "targetPrice": 3116.0,
+              "stopLoss": 2760.0,
+              "summary": "Medium-term structure held and converted into a successful follow-through move.",
+              "outcome": {
+                "result": "target_hit",
+                "evaluatedOn": "2026-04-14",
+                "holdingDays": 2,
+                "returnPct": 8.76,
+                "notes": "Position target was achieved as the trend resumed over two sessions."
+              }
+            },
+            "long_term": {
+              "conviction": "Medium",
+              "entryPrice": 2838.0,
+              "targetPrice": 3435.0,
+              "stopLoss": 2625.0,
+              "summary": "Long-term thesis stayed open with gradual early improvement.",
+              "outcome": {
+                "result": "open",
+                "evaluatedOn": "2026-04-14",
+                "holdingDays": 2,
+                "returnPct": 2.1,
+                "notes": "Long-term recommendation is still active and moving in the right direction."
+              }
+            }
+          }
+        },
+        {
+          "symbol": "TCS",
+          "companyName": "Tata Consultancy Services Ltd",
+          "sector": "Information Technology",
+          "profiles": {
+            "swing": {
+              "conviction": "Medium",
+              "entryPrice": 3995.0,
+              "targetPrice": 4193.0,
+              "stopLoss": 3908.0,
+              "summary": "Defensive demand improved enough for the short-term target to be reached.",
+              "outcome": {
+                "result": "target_hit",
+                "evaluatedOn": "2026-04-14",
+                "holdingDays": 2,
+                "returnPct": 4.96,
+                "notes": "The swing target was achieved as defensive leadership returned."
+              }
+            },
+            "position": {
+              "conviction": "Medium",
+              "entryPrice": 3962.0,
+              "targetPrice": 4375.0,
+              "stopLoss": 3825.0,
+              "summary": "Medium-term IT thesis remained open and required more confirmation time.",
+              "outcome": {
+                "result": "open",
+                "evaluatedOn": "2026-04-14",
+                "holdingDays": 2,
+                "returnPct": 1.45,
+                "notes": "Position trade remains open and above entry but has not closed yet."
+              }
+            },
+            "long_term": {
+              "conviction": "High",
+              "entryPrice": 3925.0,
+              "targetPrice": 4580.0,
+              "stopLoss": 3695.0,
+              "summary": "Long-term quality setup remained intact with modest early gains.",
+              "outcome": {
+                "result": "open",
+                "evaluatedOn": "2026-04-14",
+                "holdingDays": 2,
+                "returnPct": 1.72,
+                "notes": "Long-term thesis remains open and continues to track positively."
+              }
+            }
+          }
+        },
+        {
+          "symbol": "HDFCBANK",
+          "companyName": "HDFC Bank Ltd",
+          "sector": "Financials",
+          "profiles": {
+            "swing": {
+              "conviction": "Medium",
+              "entryPrice": 1642.0,
+              "targetPrice": 1730.0,
+              "stopLoss": 1601.0,
+              "summary": "Private bank breadth improved enough to deliver a clean swing win.",
+              "outcome": {
+                "result": "target_hit",
+                "evaluatedOn": "2026-04-14",
+                "holdingDays": 2,
+                "returnPct": 5.36,
+                "notes": "The short-term target was achieved as financials outperformed."
+              }
+            },
+            "position": {
+              "conviction": "High",
+              "entryPrice": 1635.0,
+              "targetPrice": 1768.0,
+              "stopLoss": 1578.0,
+              "summary": "Balance-sheet normalization and sector breadth supported a successful position trade.",
+              "outcome": {
+                "result": "target_hit",
+                "evaluatedOn": "2026-04-14",
+                "holdingDays": 2,
+                "returnPct": 8.13,
+                "notes": "The position idea reached target as private bank leadership broadened."
+              }
+            },
+            "long_term": {
+              "conviction": "High",
+              "entryPrice": 1610.0,
+              "targetPrice": 1865.0,
+              "stopLoss": 1530.0,
+              "summary": "Long-term financials exposure remained open with steady progress.",
+              "outcome": {
+                "result": "open",
+                "evaluatedOn": "2026-04-14",
+                "holdingDays": 2,
+                "returnPct": 2.36,
+                "notes": "The long-term position remains active and comfortably above entry."
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "batchDate": "2026-04-10",
+      "publishedAt": "2026-04-10T18:05:00+05:30",
+      "recommendations": [
+        {
+          "symbol": "RELIANCE",
+          "companyName": "Reliance Industries Ltd",
+          "sector": "Energy",
+          "profiles": {
+            "swing": {
+              "conviction": "High",
+              "entryPrice": 2848.0,
+              "targetPrice": 3008.0,
+              "stopLoss": 2778.0,
+              "summary": "Momentum setup produced a clean short-duration target hit.",
+              "outcome": {
+                "result": "target_hit",
+                "evaluatedOn": "2026-04-11",
+                "holdingDays": 1,
+                "returnPct": 5.62,
+                "notes": "The stock followed through immediately and completed the swing target."
+              }
+            },
+            "position": {
+              "conviction": "High",
+              "entryPrice": 2832.0,
+              "targetPrice": 3090.0,
+              "stopLoss": 2725.0,
+              "summary": "Position setup stayed active but had not reached either exit level yet.",
+              "outcome": {
+                "result": "open",
+                "evaluatedOn": "2026-04-11",
+                "holdingDays": 1,
+                "returnPct": 1.25,
+                "notes": "Trade remained open after the first evaluation day."
+              }
+            },
+            "long_term": {
+              "conviction": "Medium",
+              "entryPrice": 2810.0,
+              "targetPrice": 3395.0,
+              "stopLoss": 2608.0,
+              "summary": "Long-term thesis remained open with positive early mark-to-market performance.",
+              "outcome": {
+                "result": "open",
+                "evaluatedOn": "2026-04-11",
+                "holdingDays": 1,
+                "returnPct": 2.04,
+                "notes": "Long-term recommendation remains open with positive early performance."
+              }
+            }
+          }
+        },
+        {
+          "symbol": "TCS",
+          "companyName": "Tata Consultancy Services Ltd",
+          "sector": "Information Technology",
+          "profiles": {
+            "swing": {
+              "conviction": "Medium",
+              "entryPrice": 3942.0,
+              "targetPrice": 4145.0,
+              "stopLoss": 3841.0,
+              "summary": "Short-term support broke and invalidated the swing setup.",
+              "outcome": {
+                "result": "stop_loss_hit",
+                "evaluatedOn": "2026-04-11",
+                "holdingDays": 1,
+                "returnPct": -2.56,
+                "notes": "The swing call was stopped out as the base failed to hold."
+              }
+            },
+            "position": {
+              "conviction": "Medium",
+              "entryPrice": 3918.0,
+              "targetPrice": 4335.0,
+              "stopLoss": 3763.0,
+              "summary": "The medium-term base broke down early and triggered a stop-loss.",
+              "outcome": {
+                "result": "stop_loss_hit",
+                "evaluatedOn": "2026-04-11",
+                "holdingDays": 1,
+                "returnPct": -3.96,
+                "notes": "Position setup failed quickly when the medium-term support gave way."
+              }
+            },
+            "long_term": {
+              "conviction": "High",
+              "entryPrice": 3890.0,
+              "targetPrice": 4555.0,
+              "stopLoss": 3665.0,
+              "summary": "Long-term quality thesis stayed open despite a soft first day.",
+              "outcome": {
+                "result": "open",
+                "evaluatedOn": "2026-04-11",
+                "holdingDays": 1,
+                "returnPct": -0.35,
+                "notes": "Long-term recommendation remains open after a slightly negative first day."
+              }
+            }
+          }
+        },
+        {
+          "symbol": "HDFCBANK",
+          "companyName": "HDFC Bank Ltd",
+          "sector": "Financials",
+          "profiles": {
+            "swing": {
+              "conviction": "Medium",
+              "entryPrice": 1628.0,
+              "targetPrice": 1708.0,
+              "stopLoss": 1590.0,
+              "summary": "A clean bank-led move delivered the swing target.",
+              "outcome": {
+                "result": "target_hit",
+                "evaluatedOn": "2026-04-11",
+                "holdingDays": 1,
+                "returnPct": 4.91,
+                "notes": "The bank trade hit its target on improving financials breadth."
+              }
+            },
+            "position": {
+              "conviction": "High",
+              "entryPrice": 1618.0,
+              "targetPrice": 1756.0,
+              "stopLoss": 1565.0,
+              "summary": "The medium-term bank setup remained open after its first review day.",
+              "outcome": {
+                "result": "open",
+                "evaluatedOn": "2026-04-11",
+                "holdingDays": 1,
+                "returnPct": 1.92,
+                "notes": "Position trade remained open with constructive early progress."
+              }
+            },
+            "long_term": {
+              "conviction": "High",
+              "entryPrice": 1602.0,
+              "targetPrice": 1842.0,
+              "stopLoss": 1524.0,
+              "summary": "Long-term banking thesis stayed active with positive mark-to-market movement.",
+              "outcome": {
+                "result": "open",
+                "evaluatedOn": "2026-04-11",
+                "holdingDays": 1,
+                "returnPct": 1.67,
+                "notes": "The long-term call remains open and above entry."
+              }
+            }
+          }
+        }
+      ]
+    }
+  ]
+}
