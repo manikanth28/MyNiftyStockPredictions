@@ -57,9 +57,33 @@ echo [INFO] Ensuring node_modules is not tracked...
 git rm -r --cached --ignore-unmatch node_modules >nul 2>&1
 if errorlevel 1 goto :fail
 
-echo [INFO] Creating commit if needed...
+echo [INFO] Checking for uncommitted changes...
 git diff --cached --quiet >nul 2>&1
 if errorlevel 1 (
+  echo.
+  echo [INFO] Uncommitted changes found:
+  git --no-pager status --short
+  if errorlevel 1 goto :fail
+
+  echo.
+  echo [INFO] Diff summary:
+  git --no-pager diff --cached --stat
+  if errorlevel 1 goto :fail
+
+  echo.
+  echo [INFO] Full diff:
+  git --no-pager diff --cached
+  if errorlevel 1 goto :fail
+
+  echo.
+  choice /M "Continue with commit and push"
+  if errorlevel 2 (
+    echo [INFO] Publish cancelled by user.
+    pause
+    exit /b 0
+  )
+
+  echo [INFO] Creating commit...
   git commit -m "%COMMIT_MESSAGE%"
   if errorlevel 1 (
     echo [ERROR] Commit failed. Fill GIT_USER_NAME and GIT_USER_EMAIL above if Git asks for identity.
@@ -67,7 +91,7 @@ if errorlevel 1 (
     exit /b 1
   )
 ) else (
-  echo [INFO] No staged changes to commit. Continuing with existing history.
+  echo [INFO] No uncommitted file changes found. Continuing with push.
 )
 
 echo [INFO] Setting branch name to %BRANCH_NAME%...
