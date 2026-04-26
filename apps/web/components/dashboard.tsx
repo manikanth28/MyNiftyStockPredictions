@@ -15,6 +15,7 @@ import {
 } from "@/components/market-ui";
 import { StockSearchBox } from "@/components/stock-search-box";
 import { useLatestPriceOverlay } from "@/components/use-latest-price-overlay";
+import { WalletBuyModal } from "@/components/wallet-buy-modal";
 import { buildDailyPerformance, buildPerformanceSummary } from "@/lib/analytics";
 import type {
   HorizonId,
@@ -44,6 +45,9 @@ type SortKey =
   | "return"
   | "action";
 type SortDirection = "asc" | "desc";
+type SentimentFilter = "all" | "positive" | "neutral" | "negative" | "unavailable";
+type ScoreFilter = "all" | "high" | "tradable" | "watch" | "weak";
+type GrowthFilter = "all" | "strong" | "positive" | "weak" | "unavailable";
 
 const SIGNAL_SORT_RANK: Record<SignalState, number> = {
   consider: 0,
@@ -57,6 +61,30 @@ const HORIZON_THRESHOLDS: Record<HorizonId, number> = {
   position: 58,
   long_term: 60
 };
+
+const SENTIMENT_FILTERS: Array<{ id: SentimentFilter; label: string }> = [
+  { id: "all", label: "All sentiment" },
+  { id: "positive", label: "Positive" },
+  { id: "neutral", label: "Neutral" },
+  { id: "negative", label: "Negative" },
+  { id: "unavailable", label: "No sentiment" }
+];
+
+const SCORE_FILTERS: Array<{ id: ScoreFilter; label: string }> = [
+  { id: "all", label: "All scores" },
+  { id: "high", label: "High probability" },
+  { id: "tradable", label: "Tradable" },
+  { id: "watch", label: "Watch" },
+  { id: "weak", label: "Weak" }
+];
+
+const GROWTH_FILTERS: Array<{ id: GrowthFilter; label: string }> = [
+  { id: "all", label: "All growth" },
+  { id: "strong", label: "Strong growth" },
+  { id: "positive", label: "Positive growth" },
+  { id: "weak", label: "Weak growth" },
+  { id: "unavailable", label: "No growth data" }
+];
 
 function clampProgress(value: number) {
   return Math.max(0, Math.min(100, value));
@@ -162,6 +190,26 @@ function compareNullableNumber(left: number | null, right: number | null, direct
   return direction === "asc" ? left - right : right - left;
 }
 
+function priceMoveDeltaPct(
+  currentPrice: number | null | undefined,
+  referencePrice: number | null | undefined
+) {
+  if (
+    currentPrice === null ||
+    currentPrice === undefined ||
+    referencePrice === null ||
+    referencePrice === undefined ||
+    !Number.isFinite(currentPrice) ||
+    !Number.isFinite(referencePrice) ||
+    referencePrice <= 0
+  ) {
+    return null;
+  }
+
+  const deltaPct = ((currentPrice - referencePrice) / referencePrice) * 100;
+  return Math.abs(deltaPct) < 0.05 ? 0 : deltaPct;
+}
+
 function compareText(left: string, right: string, direction: SortDirection) {
   const result = left.localeCompare(right, undefined, { sensitivity: "base" });
   return direction === "asc" ? result : -result;
@@ -211,7 +259,8 @@ function sortStocks(
   horizon: HorizonId,
   sortKey: SortKey,
   sortDirection: SortDirection,
-  currentPriceFor: (stock: StockAnalysis) => number
+  currentPriceFor: (stock: StockAnalysis) => number,
+  dayStartPriceFor: (stock: StockAnalysis) => number | null
 ) {
   const sortedStocks = [...stocks];
 
@@ -220,6 +269,8 @@ function sortStocks(
     const rightPlan = right.profiles[horizon];
     const leftState = signalStateFor(leftPlan, horizon);
     const rightState = signalStateFor(rightPlan, horizon);
+    const leftCurrentPrice = currentPriceFor(left);
+    const rightCurrentPrice = currentPriceFor(right);
     let comparison = 0;
 
     switch (sortKey) {
@@ -240,10 +291,18 @@ function sortStocks(
         comparison = compareNullableNumber(leftPlan.score ?? 0, rightPlan.score ?? 0, sortDirection);
         break;
       case "suggested":
-        comparison = compareNullableNumber(leftPlan.entryPrice, rightPlan.entryPrice, sortDirection);
+        comparison = compareNullableNumber(
+          priceMoveDeltaPct(leftCurrentPrice, leftPlan.entryPrice),
+          priceMoveDeltaPct(rightCurrentPrice, rightPlan.entryPrice),
+          sortDirection
+        );
         break;
       case "now":
-        comparison = compareNullableNumber(currentPriceFor(left), currentPriceFor(right), sortDirection);
+        comparison = compareNullableNumber(
+          priceMoveDeltaPct(leftCurrentPrice, dayStartPriceFor(left)),
+          priceMoveDeltaPct(rightCurrentPrice, dayStartPriceFor(right)),
+          sortDirection
+        );
         break;
       case "target":
         comparison = compareNullableNumber(leftPlan.targetPrice, rightPlan.targetPrice, sortDirection);
@@ -327,11 +386,85 @@ function riskRewardMeta(value: number) {
   return { tone: "danger" as Tone, label: "Weak" };
 }
 
+function sentimentMatches(stock: StockAnalysis, filter: SentimentFilter) {
+  if (filter === "all") {
+    return true;
+  }
+
+  if (!stock.sentiment) {
+    return filter === "unavailable";
+  }
+
+  return stock.sentiment.overall.toLowerCase() === filter;
+}
+
+function scoreMatches(plan: RecommendationPlan, horizon: HorizonId, filter: ScoreFilter) {
+  const score = plan.score ?? 0;
+  const threshold = HORIZON_THRESHOLDS[horizon];
+
+  switch (filter) {
+    case "high":
+      return score >= threshold + 12;
+    case "tradable":
+      return score >= threshold;
+    case "watch":
+      return score >= threshold - 8 && score < threshold;
+    case "weak":
+      return score < threshold - 8;
+    default:
+      return true;
+  }
+}
+
+function growthScore(stock: StockAnalysis) {
+  const fundamentals = stock.fundamentals;
+
+  if (!fundamentals) {
+    return null;
+  }
+
+  const values = [fundamentals.salesGrowth5YPct, fundamentals.earningsGrowthPct].filter(
+    (value): value is number => value !== null && value !== undefined && Number.isFinite(value)
+  );
+
+  if (!values.length) {
+    return null;
+  }
+
+  return values.reduce((total, value) => total + value, 0) / values.length;
+}
+
+function growthMatches(stock: StockAnalysis, filter: GrowthFilter) {
+  const growth = growthScore(stock);
+
+  if (filter === "all") {
+    return true;
+  }
+
+  if (growth === null) {
+    return filter === "unavailable";
+  }
+
+  switch (filter) {
+    case "strong":
+      return growth >= 10;
+    case "positive":
+      return growth > 0;
+    case "weak":
+      return growth <= 0;
+    default:
+      return true;
+  }
+}
+
+function sessionChangeFor(stock: StockAnalysis) {
+  return stock.latestSessionChangePct ?? null;
+}
 function liveStatusMeta(mode?: string) {
   switch (mode) {
     case "live":
       return { tone: "success" as Tone, label: "Live" };
-    case "cache":
+    case "cached":
       return { tone: "warning" as Tone, label: "Cached" };
     case "sample":
       return { tone: "neutral" as Tone, label: "Offline" };
@@ -371,7 +504,9 @@ function SearchResultBanner({
   activeHorizon,
   profileLabel,
   currentPrice,
-  dayStartPrice
+  dayStartPrice,
+  sourceBatchDate,
+  sourceGeneratedAt
 }: {
   searchedAnalysis: SearchAnalysisResult;
   stockHref: string | null;
@@ -379,6 +514,8 @@ function SearchResultBanner({
   profileLabel: string;
   currentPrice: number | null;
   dayStartPrice: number | null;
+  sourceBatchDate: string;
+  sourceGeneratedAt: string;
 }) {
   const searchedStock = searchedAnalysis.stock;
   const quickPlan = searchedStock ? searchedStock.profiles[activeHorizon] : null;
@@ -435,6 +572,19 @@ function SearchResultBanner({
 
       {stockHref ? (
         <div className="dashboard-search-banner-actions">
+          {searchedStock && quickPlan && searchedState === "consider" ? (
+            <WalletBuyModal
+              stock={searchedStock}
+              plan={quickPlan}
+              horizon={activeHorizon}
+              sourceBatchDate={sourceBatchDate}
+              sourceGeneratedAt={sourceGeneratedAt}
+              currentPrice={liveCurrentPrice}
+              triggerClassName="dashboard-row-action consider"
+              triggerLabel={`Buy (${profileLabel})`}
+              triggerTitle={`Buy ${searchedStock.symbol} in paper wallet`}
+            />
+          ) : null}
           <Link className="dashboard-row-action secondary" href={stockHref}>
             Open stock
           </Link>
@@ -452,6 +602,8 @@ function StockTableRow({
   isSelected,
   currentPrice,
   dayStartPrice,
+  sourceBatchDate,
+  sourceGeneratedAt,
   onSelect
 }: {
   stock: StockAnalysis;
@@ -461,6 +613,8 @@ function StockTableRow({
   isSelected: boolean;
   currentPrice: number;
   dayStartPrice: number | null;
+  sourceBatchDate: string;
+  sourceGeneratedAt: string;
   onSelect: () => void;
 }) {
   const state = signalStateFor(plan, activeHorizon);
@@ -558,14 +712,28 @@ function StockTableRow({
       </td>
 
       <td className="dashboard-stock-cell dashboard-stock-action">
-        <Link
-          className={`dashboard-row-action ${state}`}
-          href={stockHref}
-          onClick={(event) => event.stopPropagation()}
-          title={rowActionLabel}
-        >
-          {tableActionLabel(state)}
-        </Link>
+        {state === "consider" ? (
+          <WalletBuyModal
+            stock={stock}
+            plan={plan}
+            horizon={activeHorizon}
+            sourceBatchDate={sourceBatchDate}
+            sourceGeneratedAt={sourceGeneratedAt}
+            currentPrice={currentPrice}
+            triggerClassName={`dashboard-row-action ${state}`}
+            triggerLabel={tableActionLabel(state)}
+            triggerTitle={rowActionLabel}
+          />
+        ) : (
+          <Link
+            className={`dashboard-row-action ${state}`}
+            href={stockHref}
+            onClick={(event) => event.stopPropagation()}
+            title={rowActionLabel}
+          >
+            {tableActionLabel(state)}
+          </Link>
+        )}
       </td>
     </tr>
   );
@@ -581,6 +749,8 @@ function StockTable({
   selectedSymbol,
   currentPriceFor,
   dayStartPriceFor,
+  sourceBatchDate,
+  sourceGeneratedAt,
   onSelectSymbol
 }: {
   stocks: StockAnalysis[];
@@ -592,6 +762,8 @@ function StockTable({
   selectedSymbol: string | null;
   currentPriceFor: (stock: StockAnalysis) => number;
   dayStartPriceFor: (stock: StockAnalysis) => number | null;
+  sourceBatchDate: string;
+  sourceGeneratedAt: string;
   onSelectSymbol: (symbol: string) => void;
 }) {
   return (
@@ -702,6 +874,8 @@ function StockTable({
               isSelected={selectedSymbol === stock.symbol}
               currentPrice={currentPriceFor(stock)}
               dayStartPrice={dayStartPriceFor(stock)}
+              sourceBatchDate={sourceBatchDate}
+              sourceGeneratedAt={sourceGeneratedAt}
               onSelect={() => onSelectSymbol(stock.symbol)}
             />
           ))}
@@ -711,11 +885,73 @@ function StockTable({
   );
 }
 
+function FilterSelect<T extends string>({
+  label,
+  value,
+  options,
+  onChange
+}: {
+  label: string;
+  value: T;
+  options: Array<{ id: T; label: string }>;
+  onChange: (value: T) => void;
+}) {
+  return (
+    <label className="dashboard-filter-field">
+      <span>{label}</span>
+      <select value={value} onChange={(event) => onChange(event.target.value as T)}>
+        {options.map((option) => (
+          <option key={option.id} value={option.id}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+function TopMoverList({
+  title,
+  stocks,
+  tone
+}: {
+  title: string;
+  stocks: StockAnalysis[];
+  tone: "success" | "danger";
+}) {
+  return (
+    <article className={`dashboard-mover-card ${tone}`}>
+      <div>
+        <span className="dashboard-mini-label">{title}</span>
+        <strong>{stocks.length ? stocks[0].symbol : "n/a"}</strong>
+      </div>
+      <div className="dashboard-mover-list">
+        {stocks.length ? (
+          stocks.map((stock) => (
+            <Link className="dashboard-mover-row" href={`/stocks/${stock.symbol}`} key={stock.symbol}>
+              <span>
+                {stock.symbol}
+                <small>{stock.sector}</small>
+              </span>
+              <strong>{formatPercent(sessionChangeFor(stock))}</strong>
+            </Link>
+          ))
+        ) : (
+          <span className="dashboard-mover-empty">Session change data unavailable</span>
+        )}
+      </div>
+    </article>
+  );
+}
+
 export function Dashboard({ data, searchedAnalysis }: DashboardProps) {
   const [activeHorizon, setActiveHorizon] = useState<HorizonId>(data.profiles[0]?.id ?? "single_day");
   const [sortKey, setSortKey] = useState<SortKey>("score");
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
-  const targetVisibleIdeas = 10;
+  const [sectorFilter, setSectorFilter] = useState("all");
+  const [sentimentFilter, setSentimentFilter] = useState<SentimentFilter>("all");
+  const [scoreFilter, setScoreFilter] = useState<ScoreFilter>("all");
+  const [growthFilter, setGrowthFilter] = useState<GrowthFilter>("all");
   const toggleSort = (nextSortKey: SortKey) => {
     if (nextSortKey === sortKey) {
       setSortDirection((current) => (current === "asc" ? "desc" : "asc"));
@@ -749,8 +985,40 @@ export function Dashboard({ data, searchedAnalysis }: DashboardProps) {
     [data.currentBatch.recommendations]
   );
 
+  const sectorOptions = useMemo(
+    () => [
+      { id: "all", label: "All sectors" },
+      ...Array.from(new Set(data.currentBatch.recommendations.map((stock) => stock.sector)))
+        .sort((left, right) => left.localeCompare(right))
+        .map((sector) => ({ id: sector, label: sector }))
+    ],
+    [data.currentBatch.recommendations]
+  );
+
+  const filteredUniverse = useMemo(
+    () =>
+      data.currentBatch.recommendations.filter((stock) => {
+        const plan = stock.profiles[activeHorizon];
+
+        return (
+          (sectorFilter === "all" || stock.sector === sectorFilter) &&
+          sentimentMatches(stock, sentimentFilter) &&
+          scoreMatches(plan, activeHorizon, scoreFilter) &&
+          growthMatches(stock, growthFilter)
+        );
+      }),
+    [
+      activeHorizon,
+      data.currentBatch.recommendations,
+      growthFilter,
+      scoreFilter,
+      sectorFilter,
+      sentimentFilter
+    ]
+  );
+
   const recommendationBuckets = useMemo(() => {
-    const sorted = [...data.currentBatch.recommendations].sort(
+    const sorted = [...filteredUniverse].sort(
       (left, right) => planScore(right.profiles[activeHorizon]) - planScore(left.profiles[activeHorizon])
     );
     const tradableRecommendations = sorted.filter(
@@ -761,14 +1029,31 @@ export function Dashboard({ data, searchedAnalysis }: DashboardProps) {
     );
 
     return {
-      visibleRecommendations: tradableRecommendations.slice(0, targetVisibleIdeas),
-      visibleWatchlist: watchRecommendations.slice(0, targetVisibleIdeas),
+      visibleRecommendations: tradableRecommendations,
+      visibleWatchlist: watchRecommendations,
       tradableCount: tradableRecommendations.length,
       watchCount: watchRecommendations.length
     };
-  }, [activeHorizon, data.currentBatch.recommendations]);
+  }, [activeHorizon, filteredUniverse]);
   const tradableShortlistRecommendations = recommendationBuckets.visibleRecommendations;
   const watchShortlistRecommendations = recommendationBuckets.visibleWatchlist;
+  const moverUniverse = filteredUniverse.length ? filteredUniverse : data.currentBatch.recommendations;
+  const topGainers = useMemo(
+    () =>
+      [...moverUniverse]
+        .filter((stock) => sessionChangeFor(stock) !== null)
+        .sort((left, right) => (sessionChangeFor(right) ?? 0) - (sessionChangeFor(left) ?? 0))
+        .slice(0, 5),
+    [moverUniverse]
+  );
+  const topLosers = useMemo(
+    () =>
+      [...moverUniverse]
+        .filter((stock) => sessionChangeFor(stock) !== null)
+        .sort((left, right) => (sessionChangeFor(left) ?? 0) - (sessionChangeFor(right) ?? 0))
+        .slice(0, 5),
+    [moverUniverse]
+  );
   const overlaySymbols = useMemo(
     () =>
       [
@@ -791,7 +1076,8 @@ export function Dashboard({ data, searchedAnalysis }: DashboardProps) {
       activeHorizon,
       sortKey,
       sortDirection,
-      currentPriceFor
+      currentPriceFor,
+      dayStartPriceFor
     );
   }, [activeHorizon, livePriceOverlay, sortDirection, sortKey, tradableShortlistRecommendations]);
   const visibleWatchlist = useMemo(() => {
@@ -800,7 +1086,8 @@ export function Dashboard({ data, searchedAnalysis }: DashboardProps) {
       activeHorizon,
       sortKey,
       sortDirection,
-      currentPriceFor
+      currentPriceFor,
+      dayStartPriceFor
     );
   }, [activeHorizon, livePriceOverlay, sortDirection, sortKey, watchShortlistRecommendations]);
   const displayedRecommendations = visibleRecommendations.length ? visibleRecommendations : visibleWatchlist;
@@ -899,7 +1186,7 @@ export function Dashboard({ data, searchedAnalysis }: DashboardProps) {
       label: "Analyzed stocks",
       tooltip: "Names processed in the current recommendation batch.",
       value: formatNumber(data.currentBatch.recommendations.length),
-      footnote: data.currentBatch.batchDate
+      footnote: `${formatNumber(filteredUniverse.length)} match active filters`
     },
     {
       icon: "AR",
@@ -965,6 +1252,8 @@ export function Dashboard({ data, searchedAnalysis }: DashboardProps) {
             profileLabel={profileLabel}
             currentPrice={searchedCurrentPrice}
             dayStartPrice={searchedDayStartPrice}
+            sourceBatchDate={data.currentBatch.batchDate}
+            sourceGeneratedAt={data.currentBatch.generatedAt}
           />
         ) : null}
       </section>
@@ -978,13 +1267,18 @@ export function Dashboard({ data, searchedAnalysis }: DashboardProps) {
               </span>
               <span className="dashboard-kpi-label">
                 {card.label}
-                <InfoTooltip content={card.tooltip} />
+                <InfoTooltip label={`${card.label} information`} content={card.tooltip} />
               </span>
             </div>
             <strong className="dashboard-kpi-value">{card.value}</strong>
             <span className="dashboard-kpi-footnote">{card.footnote}</span>
           </article>
         ))}
+      </section>
+
+      <section className="dashboard-movers-grid" aria-label="Top market movers">
+        <TopMoverList title="Top gainers" stocks={topGainers} tone="success" />
+        <TopMoverList title="Top losers" stocks={topLosers} tone="danger" />
       </section>
 
       <section className="dashboard-main-grid">
@@ -1009,6 +1303,40 @@ export function Dashboard({ data, searchedAnalysis }: DashboardProps) {
             </div>
           </div>
 
+          <section className="dashboard-filter-panel" aria-label="Research console filters">
+            <div className="dashboard-filter-copy">
+              <span className="dashboard-mini-label">Full stock table</span>
+              <strong>{formatNumber(filteredUniverse.length)} stocks match filters</strong>
+              <p>Filter the full current universe by sector, sentiment, score quality, and growth before comparing trade plans.</p>
+            </div>
+            <div className="dashboard-filter-grid">
+              <FilterSelect
+                label="Sector"
+                value={sectorFilter}
+                options={sectorOptions}
+                onChange={setSectorFilter}
+              />
+              <FilterSelect
+                label="Sentiment"
+                value={sentimentFilter}
+                options={SENTIMENT_FILTERS}
+                onChange={setSentimentFilter}
+              />
+              <FilterSelect
+                label="Score"
+                value={scoreFilter}
+                options={SCORE_FILTERS}
+                onChange={setScoreFilter}
+              />
+              <FilterSelect
+                label="Growth"
+                value={growthFilter}
+                options={GROWTH_FILTERS}
+                onChange={setGrowthFilter}
+              />
+            </div>
+          </section>
+
           <div className="dashboard-table-stack">
             <section className="dashboard-table-section">
               <div className="dashboard-table-subhead">
@@ -1031,6 +1359,8 @@ export function Dashboard({ data, searchedAnalysis }: DashboardProps) {
                     selectedSymbol={selectedSymbol}
                     currentPriceFor={currentPriceFor}
                     dayStartPriceFor={dayStartPriceFor}
+                    sourceBatchDate={data.currentBatch.batchDate}
+                    sourceGeneratedAt={data.currentBatch.generatedAt}
                     onSelectSymbol={setSelectedSymbol}
                   />
                 ) : (
@@ -1062,6 +1392,8 @@ export function Dashboard({ data, searchedAnalysis }: DashboardProps) {
                     selectedSymbol={selectedSymbol}
                     currentPriceFor={currentPriceFor}
                     dayStartPriceFor={dayStartPriceFor}
+                    sourceBatchDate={data.currentBatch.batchDate}
+                    sourceGeneratedAt={data.currentBatch.generatedAt}
                     onSelectSymbol={setSelectedSymbol}
                   />
                 </div>
@@ -1138,12 +1470,26 @@ export function Dashboard({ data, searchedAnalysis }: DashboardProps) {
               </div>
 
               <div className="dashboard-side-actions">
-                <Link
-                  className={`dashboard-row-action dashboard-row-action-primary ${signalStateFor(spotlightPlan, activeHorizon)}`}
-                  href={`/stocks/${spotlightStock.symbol}`}
-                >
-                  {actionLabel(signalStateFor(spotlightPlan, activeHorizon), profileLabel)}
-                </Link>
+                {signalStateFor(spotlightPlan, activeHorizon) === "consider" ? (
+                  <WalletBuyModal
+                    stock={spotlightStock}
+                    plan={spotlightPlan}
+                    horizon={activeHorizon}
+                    sourceBatchDate={data.currentBatch.batchDate}
+                    sourceGeneratedAt={data.currentBatch.generatedAt}
+                    currentPrice={spotlightCurrentPrice ?? spotlightStock.currentMarketPrice}
+                    triggerClassName={`dashboard-row-action dashboard-row-action-primary ${signalStateFor(spotlightPlan, activeHorizon)}`}
+                    triggerLabel={actionLabel(signalStateFor(spotlightPlan, activeHorizon), profileLabel)}
+                    triggerTitle={actionLabel(signalStateFor(spotlightPlan, activeHorizon), profileLabel)}
+                  />
+                ) : (
+                  <Link
+                    className={`dashboard-row-action dashboard-row-action-primary ${signalStateFor(spotlightPlan, activeHorizon)}`}
+                    href={`/stocks/${spotlightStock.symbol}`}
+                  >
+                    {actionLabel(signalStateFor(spotlightPlan, activeHorizon), profileLabel)}
+                  </Link>
+                )}
                 <Link className="dashboard-row-action secondary" href={`/stocks/${spotlightStock.symbol}`}>
                   Open stock
                 </Link>

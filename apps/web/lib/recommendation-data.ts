@@ -3,6 +3,7 @@ import path from "node:path";
 import {
   fetchCompanyResearch,
   lookupNseSymbol,
+  moneyControlNewsDecision,
   scoreAnalystSignal,
   scoreEarningsSignal,
   scoreFundamentals,
@@ -73,6 +74,7 @@ type MarketSeries = UniverseEntry & {
   meta: ChartMeta;
   fundamentals: StockAnalysis["fundamentals"];
   sentiment: StockAnalysis["sentiment"];
+  derivatives: StockAnalysis["derivatives"];
   researchStatus?: StockResearchStatus;
 };
 
@@ -182,6 +184,41 @@ export type RecommendationRefreshStatus = {
   error: string | null;
 };
 
+export type MarketRefreshReadiness = {
+  expectedBatchDate: string;
+  latestBatchDate: string | null;
+  isTradingDay: boolean;
+  isMarketSession: boolean;
+  shouldRefresh: boolean;
+  detail: string;
+};
+
+export type AutomationRefreshTrigger = "manual" | "auto" | "scheduler";
+export type AutomationRunState = "running" | "succeeded" | "failed" | "skipped";
+
+export type AutomationRunRecord = {
+  id: string;
+  trigger: AutomationRefreshTrigger;
+  status: AutomationRunState;
+  startedAt: string;
+  finishedAt: string | null;
+  expectedBatchDate: string | null;
+  previousBatchDate: string | null;
+  batchDate: string | null;
+  generatedAt: string | null;
+  detail: string;
+  error: string | null;
+  processedSymbols: number;
+  totalSymbols: number;
+  force: boolean;
+};
+
+export type RefreshRecommendationDataOptions = {
+  trigger?: AutomationRefreshTrigger;
+  readiness?: MarketRefreshReadiness | null;
+  force?: boolean;
+};
+
 export type LatestPriceSnapshot = {
   currentMarketPrice: number;
   latestSessionChangePct: number | null;
@@ -191,10 +228,10 @@ export type LatestPriceSnapshot = {
 
 type SectorFundamentalSource = {
   sector: string;
-  fundamentals: StockAnalysis["fundamentals"];
+  fundamentals?: StockAnalysis["fundamentals"];
 };
 
-type CachedResearchSource = Pick<StockAnalysis, "fundamentals" | "sentiment" | "researchStatus">;
+type CachedResearchSource = Pick<StockAnalysis, "fundamentals" | "sentiment" | "derivatives" | "researchStatus">;
 type ResearchCoverage = NonNullable<DataSourceInfo["researchCoverage"]>;
 
 const MARKET_UNIVERSE = NIFTY_100_UNIVERSE;
@@ -269,6 +306,27 @@ const LIVE_DATA_CACHE_MINUTES = (() => {
 
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 20;
 })();
+const MARKET_TIME_ZONE = "Asia/Kolkata";
+const MARKET_OPEN_HOUR = (() => {
+  const parsed = Number.parseInt(process.env.MARKET_OPEN_HOUR_IST ?? "", 10);
+
+  return Number.isFinite(parsed) && parsed >= 0 && parsed <= 23 ? parsed : 9;
+})();
+const MARKET_OPEN_MINUTE = (() => {
+  const parsed = Number.parseInt(process.env.MARKET_OPEN_MINUTE_IST ?? "", 10);
+
+  return Number.isFinite(parsed) && parsed >= 0 && parsed <= 59 ? parsed : 15;
+})();
+const MARKET_CLOSE_HOUR = (() => {
+  const parsed = Number.parseInt(process.env.MARKET_CLOSE_HOUR_IST ?? "", 10);
+
+  return Number.isFinite(parsed) && parsed >= 0 && parsed <= 23 ? parsed : 15;
+})();
+const MARKET_CLOSE_MINUTE = (() => {
+  const parsed = Number.parseInt(process.env.MARKET_CLOSE_MINUTE_IST ?? "", 10);
+
+  return Number.isFinite(parsed) && parsed >= 0 && parsed <= 59 ? parsed : 30;
+})();
 
 let datasetMemoryCache: DatasetCacheEntry | null = null;
 let liveDatasetRefreshPromise: Promise<RecommendationDataset | null> | null = null;
@@ -317,6 +375,127 @@ function rememberDataset(dataset: RecommendationDataset) {
   };
 
   return dataset;
+}
+function marketClockParts(date = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: MARKET_TIME_ZONE,
+    weekday: "short",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23"
+  }).formatToParts(date);
+  const read = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((part) => part.type === type)?.value ?? "";
+
+  return {
+    weekday: read("weekday"),
+    year: read("year"),
+    month: read("month"),
+    day: read("day"),
+    hour: Number.parseInt(read("hour"), 10) || 0,
+    minute: Number.parseInt(read("minute"), 10) || 0
+  };
+}
+
+function marketDateString(date = new Date()) {
+  const parts = marketClockParts(date);
+  return `${parts.year}-${parts.month}-${parts.day}`;
+}
+
+function parseDateOnly(value: string) {
+  const [year, month, day] = value.split("-").map((part) => Number.parseInt(part, 10));
+
+  return new Date(Date.UTC(year, (month || 1) - 1, day || 1, 12, 0, 0));
+}
+
+function formatDateOnly(date: Date) {
+  return date.toISOString().slice(0, 10);
+}
+
+function isWeekend(date: Date) {
+  const day = date.getUTCDay();
+  return day === 0 || day === 6;
+}
+
+function previousTradingDate(dateString: string) {
+  const date = parseDateOnly(dateString);
+
+  do {
+    date.setUTCDate(date.getUTCDate() - 1);
+  } while (isWeekend(date));
+
+  return formatDateOnly(date);
+}
+
+function marketMinuteOfDay(parts: ReturnType<typeof marketClockParts>) {
+  return parts.hour * 60 + parts.minute;
+}
+
+function marketOpenMinuteOfDay() {
+  return MARKET_OPEN_HOUR * 60 + MARKET_OPEN_MINUTE;
+}
+
+function marketCloseMinuteOfDay() {
+  return MARKET_CLOSE_HOUR * 60 + MARKET_CLOSE_MINUTE;
+}
+
+function isMarketTradingDay(now = new Date()) {
+  const weekday = marketClockParts(now).weekday.toLowerCase();
+  return !weekday.startsWith("sat") && !weekday.startsWith("sun");
+}
+
+function isMarketSession(now = new Date()) {
+  if (!isMarketTradingDay(now)) {
+    return false;
+  }
+
+  const minuteOfDay = marketMinuteOfDay(marketClockParts(now));
+  return minuteOfDay >= marketOpenMinuteOfDay() && minuteOfDay <= marketCloseMinuteOfDay();
+}
+
+function latestExpectedBatchDate(now = new Date()) {
+  const parts = marketClockParts(now);
+  const today = `${parts.year}-${parts.month}-${parts.day}`;
+  const weekday = parts.weekday.toLowerCase();
+
+  if (weekday.startsWith("sat") || weekday.startsWith("sun")) {
+    return previousTradingDate(today);
+  }
+
+  if (marketMinuteOfDay(parts) < marketOpenMinuteOfDay()) {
+    return previousTradingDate(today);
+  }
+
+  return today;
+}
+
+function datasetBatchAgeDays(dataset: RecommendationDataset, now = new Date()) {
+  const expected = parseDateOnly(latestExpectedBatchDate(now)).getTime();
+  const batch = parseDateOnly(dataset.currentBatch.batchDate).getTime();
+
+  return Math.max(0, Math.round((expected - batch) / (24 * 60 * 60 * 1000)));
+}
+
+function isDatasetStale(dataset: RecommendationDataset, now = new Date()) {
+  return dataset.currentBatch.batchDate < latestExpectedBatchDate(now);
+}
+
+function cachedDatasetDetail(dataset: RecommendationDataset, liveRefreshAttempted = false) {
+  const ageDays = datasetBatchAgeDays(dataset);
+  const expectedBatchDate = latestExpectedBatchDate();
+
+  if (!isDatasetStale(dataset)) {
+    return `Using the last successful live snapshot from ${dataset.currentBatch.generatedAt}.`;
+  }
+
+  const stalenessLabel = ageDays <= 0 ? "stale" : `${ageDays} trading day${ageDays === 1 ? "" : "s"} old`;
+
+  return liveRefreshAttempted
+    ? `Showing the last successful cached snapshot from ${dataset.currentBatch.generatedAt} because the live refresh did not complete. The saved batch is ${stalenessLabel}; the latest expected market batch date is ${expectedBatchDate}.`
+    : `Showing the last successful cached snapshot from ${dataset.currentBatch.generatedAt}. The saved batch is ${stalenessLabel}; the latest expected market batch date is ${expectedBatchDate}, so the app will try a live rebuild before reusing this cache.`;
 }
 
 function setRefreshJobStatus(status: Partial<RecommendationRefreshStatus>) {
@@ -396,30 +575,48 @@ function logDatasetRefreshFailure(error: unknown) {
   );
 }
 
-function refreshLiveDatasetInBackground() {
+async function refreshLiveDatasetInBackground(options: RefreshRecommendationDataOptions = {}) {
   if (liveDatasetRefreshPromise) {
     return liveDatasetRefreshPromise;
   }
 
-  startRefreshJob("Preparing a full market-data rebuild.");
+  const readiness = options.readiness ?? (await getMarketRefreshReadiness().catch(() => null));
+  const automationRun = await startAutomationRunRecord(options, readiness);
+  const trigger = options.trigger ?? "manual";
+
+  startRefreshJob(`${refreshTriggerDetail(trigger)} is preparing a full market-data rebuild.`);
   liveDatasetRefreshPromise = (async () => {
     try {
       const dataset = await buildLiveDataset();
 
       if (!dataset) {
-        failRefreshJob(
-          "Live market refresh did not complete successfully. The previous cached snapshot is still available."
-        );
+        const detail =
+          "Live market refresh did not complete successfully. The previous cached snapshot is still available.";
+        failRefreshJob(detail);
+        await finishAutomationRunRecord(automationRun.id, "failed", detail, null, null);
         return null;
       }
 
       succeedRefreshJob(dataset);
+      await finishAutomationRunRecord(
+        automationRun.id,
+        "succeeded",
+        "Full market dataset refreshed successfully.",
+        dataset,
+        null
+      );
       return dataset;
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+
       logDatasetRefreshFailure(error);
-      failRefreshJob(
+      failRefreshJob("Live market refresh failed. The previous cached snapshot is still available.", errorMessage);
+      await finishAutomationRunRecord(
+        automationRun.id,
+        "failed",
         "Live market refresh failed. The previous cached snapshot is still available.",
-        error instanceof Error ? error.message : String(error)
+        null,
+        errorMessage
       );
       return null;
     } finally {
@@ -430,8 +627,8 @@ function refreshLiveDatasetInBackground() {
   return liveDatasetRefreshPromise;
 }
 
-export async function refreshRecommendationData() {
-  return refreshLiveDatasetInBackground();
+export async function refreshRecommendationData(options: RefreshRecommendationDataOptions = {}) {
+  return refreshLiveDatasetInBackground(options);
 }
 
 function horizonMomentumValue(metrics: SnapshotMetrics, horizon: HorizonId) {
@@ -1009,6 +1206,8 @@ const DATA_DIRECTORY_CANDIDATES = [
 const SAMPLE_FILE_NAME = "sample-recommendations.json";
 const GENERATED_FILE_NAME = "generated-recommendations.json";
 const DAILY_BATCH_DIRECTORY_NAME = "daily-batches";
+const AUTOMATION_RUN_LOG_FILE_NAME = "automation-runs.json";
+const AUTOMATION_RUN_LOG_LIMIT = 100;
 const LIVE_LOOKBACK_RANGE = "1y";
 const HISTORY_BATCH_COUNT = 8;
 const MINIMUM_LIVE_COVERAGE_RATIO = 0.5;
@@ -1134,6 +1333,7 @@ function buildCachedResearchMap(dataset: RecommendationDataset | null) {
     researchMap.set(stock.symbol, {
       fundamentals: stock.fundamentals ?? null,
       sentiment: stock.sentiment ?? null,
+      derivatives: stock.derivatives ?? null,
       researchStatus: stock.researchStatus
     });
   }
@@ -1163,10 +1363,23 @@ function collectResearchCoverage(liveSeries: MarketSeries[]): ResearchCoverage {
         coverage.sentimentUnavailable += 1;
       }
 
+      const derivativesState = series.researchStatus?.derivatives?.state ?? "unavailable";
+
+      if (derivativesState === "live") {
+        coverage.derivativesLive = (coverage.derivativesLive ?? 0) + 1;
+      } else if (derivativesState === "cached") {
+        coverage.derivativesCached = (coverage.derivativesCached ?? 0) + 1;
+      } else {
+        coverage.derivativesUnavailable = (coverage.derivativesUnavailable ?? 0) + 1;
+      }
       coverage.nseAnnouncementHeadlines +=
         series.sentiment?.headlines.filter((headline) => headline.source === "NSE Announcements").length ?? 0;
       coverage.googleNewsHeadlines +=
-        series.sentiment?.headlines.filter((headline) => headline.source !== "NSE Announcements").length ?? 0;
+        series.sentiment?.headlines.filter(
+          (headline) => headline.source !== "NSE Announcements" && headline.source !== "MoneyControl"
+        ).length ?? 0;
+      coverage.moneyControlHeadlines +=
+        series.sentiment?.headlines.filter((headline) => headline.source === "MoneyControl").length ?? 0;
 
       return coverage;
     },
@@ -1178,7 +1391,12 @@ function collectResearchCoverage(liveSeries: MarketSeries[]): ResearchCoverage {
       sentimentCached: 0,
       sentimentUnavailable: 0,
       nseAnnouncementHeadlines: 0,
-      googleNewsHeadlines: 0
+      googleNewsHeadlines: 0,
+      moneyControlHeadlines: 0,
+      moneyControlDecision: moneyControlNewsDecision(),
+      derivativesLive: 0,
+      derivativesCached: 0,
+      derivativesUnavailable: 0
     }
   );
 }
@@ -1794,6 +2012,167 @@ async function dailyBatchFilePath(batchDate: string) {
   return path.join(directory, `${batchDate}.json`);
 }
 
+async function automationRunLogFilePath() {
+  return path.join(await resolvedDataDirectory(), AUTOMATION_RUN_LOG_FILE_NAME);
+}
+
+function automationRunId(startedAt: string) {
+  const suffix = Math.random().toString(36).slice(2, 8);
+  return `${startedAt.replace(/[:.]/g, "-")}-${suffix}`;
+}
+
+function isAutomationRunRecord(value: unknown): value is AutomationRunRecord {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const record = value as Partial<AutomationRunRecord>;
+
+  return (
+    typeof record.id === "string" &&
+    (record.trigger === "manual" || record.trigger === "auto" || record.trigger === "scheduler") &&
+    (record.status === "running" ||
+      record.status === "succeeded" ||
+      record.status === "failed" ||
+      record.status === "skipped") &&
+    typeof record.startedAt === "string"
+  );
+}
+
+async function readAutomationRunLog() {
+  try {
+    const records = await readJsonFile<unknown>(await automationRunLogFilePath());
+
+    if (!Array.isArray(records)) {
+      return [];
+    }
+
+    return records.filter(isAutomationRunRecord).slice(0, AUTOMATION_RUN_LOG_LIMIT);
+  } catch {
+    return [];
+  }
+}
+
+async function writeAutomationRunLog(records: AutomationRunRecord[]) {
+  try {
+    await writeFile(
+      await automationRunLogFilePath(),
+      JSON.stringify(records.slice(0, AUTOMATION_RUN_LOG_LIMIT), null, 2),
+      "utf-8"
+    );
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function appendAutomationRunRecord(record: AutomationRunRecord) {
+  const records = await readAutomationRunLog();
+  await writeAutomationRunLog([record, ...records.filter((existing) => existing.id !== record.id)]);
+}
+
+async function updateAutomationRunRecord(id: string, patch: Partial<AutomationRunRecord>) {
+  const records = await readAutomationRunLog();
+  const index = records.findIndex((record) => record.id === id);
+
+  if (index === -1) {
+    return;
+  }
+
+  records[index] = {
+    ...records[index],
+    ...patch
+  };
+
+  await writeAutomationRunLog(records);
+}
+
+function refreshTriggerDetail(trigger: AutomationRefreshTrigger) {
+  switch (trigger) {
+    case "auto":
+      return "In-app market-open auto refresh";
+    case "scheduler":
+      return "Scheduler refresh";
+    case "manual":
+      return "Manual refresh";
+  }
+}
+
+function buildAutomationRunRecord(
+  trigger: AutomationRefreshTrigger,
+  status: AutomationRunState,
+  detail: string,
+  readiness: MarketRefreshReadiness | null,
+  force: boolean,
+  startedAt = new Date().toISOString()
+): AutomationRunRecord {
+  return {
+    id: automationRunId(startedAt),
+    trigger,
+    status,
+    startedAt,
+    finishedAt: status === "running" ? null : startedAt,
+    expectedBatchDate: readiness?.expectedBatchDate ?? null,
+    previousBatchDate: readiness?.latestBatchDate ?? null,
+    batchDate: null,
+    generatedAt: null,
+    detail,
+    error: null,
+    processedSymbols: 0,
+    totalSymbols: MARKET_UNIVERSE.length,
+    force
+  };
+}
+
+async function startAutomationRunRecord(options: RefreshRecommendationDataOptions, readiness: MarketRefreshReadiness | null) {
+  const trigger = options.trigger ?? "manual";
+  const detail = `${refreshTriggerDetail(trigger)} started.`;
+  const record = buildAutomationRunRecord(trigger, "running", detail, readiness, options.force === true);
+
+  await appendAutomationRunRecord(record);
+
+  return record;
+}
+
+async function finishAutomationRunRecord(
+  id: string,
+  status: Exclude<AutomationRunState, "running" | "skipped">,
+  detail: string,
+  dataset: RecommendationDataset | null,
+  error: string | null
+) {
+  await updateAutomationRunRecord(id, {
+    status,
+    finishedAt: new Date().toISOString(),
+    batchDate: dataset?.currentBatch.batchDate ?? null,
+    generatedAt: dataset?.currentBatch.generatedAt ?? null,
+    detail,
+    error,
+    processedSymbols: refreshJobStatus.processedSymbols,
+    totalSymbols: refreshJobStatus.totalSymbols
+  });
+}
+
+export async function recordSkippedRefreshRun(
+  trigger: AutomationRefreshTrigger,
+  readiness: MarketRefreshReadiness,
+  detail = readiness.detail,
+  force = false
+) {
+  const record = buildAutomationRunRecord(trigger, "skipped", detail, readiness, force);
+  record.finishedAt = record.startedAt;
+
+  await appendAutomationRunRecord(record);
+
+  return record;
+}
+
+export async function listAutomationRuns(limit = 20) {
+  const numericLimit = Number.isFinite(limit) ? Math.floor(limit) : 20;
+  const safeLimit = Math.max(0, Math.min(AUTOMATION_RUN_LOG_LIMIT, numericLimit));
+  return (await readAutomationRunLog()).slice(0, safeLimit);
+}
+
 function cloneSingleDayPlanFromFallback(plan: RecommendationPlan): RecommendationPlan {
   const settings = HORIZON_SETTINGS.single_day;
   const entryPrice = roundPrice(plan.entryPrice);
@@ -1824,7 +2203,7 @@ function cloneSingleDayPlanFromFallback(plan: RecommendationPlan): Recommendatio
       "This single-day view was synthesized from the saved swing setup because the cached dataset predates the single-day model.",
       ...plan.drivers
     ].slice(0, 4),
-    analysisDrivers: [
+    analysisDrivers: ([
       {
         area: "risk",
         impact: "neutral",
@@ -1833,7 +2212,7 @@ function cloneSingleDayPlanFromFallback(plan: RecommendationPlan): Recommendatio
           "This single-day view was synthesized from the saved swing setup because the cached dataset predates the current single-day reasoning model."
       },
       ...(plan.analysisDrivers ?? [])
-    ].slice(0, 6),
+    ] satisfies AnalysisDriver[]).slice(0, 6),
     technicalSignals: [
       { name: "Compatibility mode", value: "Derived from swing profile" },
       ...plan.technicalSignals
@@ -1874,8 +2253,66 @@ function normalizeHistoricalProfiles(profiles: Record<string, HistoricalRecommen
   } satisfies Record<HorizonId, HistoricalRecommendationPlan>;
 }
 
-function normalizeDataset(dataset: RecommendationDataset): RecommendationDataset {
+function currentPlanToHistoricalPlan(
+  plan: RecommendationPlan,
+  stock: StockAnalysis,
+  batchDate: string
+): HistoricalRecommendationPlan {
   return {
+    score: plan.score,
+    rank: plan.rank,
+    isRecommended: plan.isRecommended,
+    conviction: plan.conviction,
+    entryPrice: plan.entryPrice,
+    targetPrice: plan.targetPrice,
+    stopLoss: plan.stopLoss,
+    summary: plan.summary,
+    outcome: {
+      result: "open",
+      evaluatedOn: batchDate,
+      holdingDays: 0,
+      returnPct: roundMetric(pctChange(stock.currentMarketPrice, plan.entryPrice) ?? 0),
+      benchmarkReturnPct: null,
+      notes:
+        "Current market-session recommendation snapshot. Outcome will update after future refreshed batches have enough price history to evaluate target or stop-loss."
+    }
+  };
+}
+
+function currentBatchToHistoricalBatch(batch: RecommendationDataset["currentBatch"]): HistoricalBatch {
+  return {
+    batchDate: batch.batchDate,
+    publishedAt: batch.generatedAt,
+    recommendations: batch.recommendations.map((stock) => ({
+      symbol: stock.symbol,
+      companyName: stock.companyName,
+      sector: stock.sector,
+      profiles: {
+        single_day: currentPlanToHistoricalPlan(stock.profiles.single_day, stock, batch.batchDate),
+        swing: currentPlanToHistoricalPlan(stock.profiles.swing, stock, batch.batchDate),
+        position: currentPlanToHistoricalPlan(stock.profiles.position, stock, batch.batchDate),
+        long_term: currentPlanToHistoricalPlan(stock.profiles.long_term, stock, batch.batchDate)
+      }
+    }))
+  };
+}
+
+function withCurrentBatchArchived(dataset: RecommendationDataset): RecommendationDataset {
+  const currentArchiveBatch = currentBatchToHistoricalBatch(dataset.currentBatch);
+  const historyWithoutCurrentDate = dataset.history.filter(
+    (batch) => batch.batchDate !== dataset.currentBatch.batchDate
+  );
+
+  return {
+    ...dataset,
+    history: [currentArchiveBatch, ...historyWithoutCurrentDate].sort((left, right) =>
+      right.batchDate.localeCompare(left.batchDate)
+    )
+  };
+}
+
+function normalizeDataset(dataset: RecommendationDataset): RecommendationDataset {
+  const normalized = {
     ...dataset,
     profiles: HORIZON_ORDER.map(
       (horizon) =>
@@ -1902,6 +2339,8 @@ function normalizeDataset(dataset: RecommendationDataset): RecommendationDataset
       }))
     }))
   };
+
+  return withCurrentBatchArchived(normalized);
 }
 
 async function readSampleDataset() {
@@ -1920,6 +2359,35 @@ async function readGeneratedDataset() {
   } catch {
     return null;
   }
+}
+
+export async function getMarketRefreshReadiness(): Promise<MarketRefreshReadiness> {
+  const memoryDataset = readDatasetMemoryCache();
+  const cachedDataset = memoryDataset ?? (await readGeneratedDataset());
+  const expectedBatchDate = latestExpectedBatchDate();
+  const latestBatchDate = cachedDataset?.currentBatch.batchDate ?? null;
+  const tradingDay = isMarketTradingDay();
+  const marketSession = isMarketSession();
+  const shouldRefresh =
+    tradingDay &&
+    marketSession &&
+    refreshJobStatus.state !== "running" &&
+    (!cachedDataset || cachedDataset.currentBatch.batchDate < expectedBatchDate);
+
+  return {
+    expectedBatchDate,
+    latestBatchDate,
+    isTradingDay: tradingDay,
+    isMarketSession: marketSession,
+    shouldRefresh,
+    detail: shouldRefresh
+      ? `Market session is open and the latest saved batch is ${latestBatchDate ?? "missing"}; expected batch date is ${expectedBatchDate}.`
+      : marketSession
+        ? `Market session is open and the dashboard is aligned to expected batch date ${expectedBatchDate}.`
+        : tradingDay
+          ? `Market is outside the configured NSE session window (${MARKET_OPEN_HOUR}:${String(MARKET_OPEN_MINUTE).padStart(2, "0")} to ${MARKET_CLOSE_HOUR}:${String(MARKET_CLOSE_MINUTE).padStart(2, "0")} IST).`
+          : `Today is not treated as an NSE trading day; expected batch date is ${expectedBatchDate}.`
+  };
 }
 
 type DatasetPersistenceResult = {
@@ -2087,7 +2555,10 @@ export async function fetchLatestPriceOverlay(symbols: string[]) {
   );
 }
 
-async function fetchSeries(entry: UniverseEntry, cachedResearch: CachedResearchSource | null = null) {
+async function fetchSeries(
+  entry: UniverseEntry,
+  cachedResearch: CachedResearchSource | null = null
+): Promise<MarketSeries | null> {
   const payload = await fetchChartPayload(entry.yahooSymbol);
 
   if (!payload) {
@@ -2107,6 +2578,7 @@ async function fetchSeries(entry: UniverseEntry, cachedResearch: CachedResearchS
         industry: entry.industry,
         fundamentals: null,
         sentiment: null,
+        derivatives: null,
         researchStatus: undefined
       }
     : await withResearchFetchLimit(() =>
@@ -2135,6 +2607,7 @@ async function fetchSeries(entry: UniverseEntry, cachedResearch: CachedResearchS
     liquidityTier: liquidityTierFromVolume(parsed.meta.regularMarketVolume ?? parsed.bars.at(-1)?.volume ?? null),
     fundamentals: research.fundamentals,
     sentiment: research.sentiment,
+    derivatives: research.derivatives,
     researchStatus: research.researchStatus
   } satisfies MarketSeries;
 }
@@ -2667,6 +3140,7 @@ function buildTradePlan(
   const earningsScore = scoreEarningsSignal(entry.sentiment ?? null);
   const analystScore = scoreAnalystSignal(entry.sentiment ?? null);
   const riskFeedback = stopLossFragilityFeedback(metrics, horizon, learning);
+  const derivatives = entry.derivatives ?? null;
   const score = roundMetric(clamp(rawScore - riskFeedback.penalty, 0, 100));
   const atrPct = metrics.atrPct ?? (settings.targetRangePct[0] * 0.45);
   const entryPrice = roundPrice(metrics.currentPrice);
@@ -2913,7 +3387,13 @@ function buildTradePlan(
           value: `${entry.sentiment.positiveCount} positive / ${entry.sentiment.negativeCount} negative`
         },
         { name: "Neutral headlines", value: `${entry.sentiment.neutralCount}` },
-        { name: "NSE announcements", value: `${entry.sentiment.announcementCount}` }
+        { name: "NSE announcements", value: `${entry.sentiment.announcementCount}` },
+        {
+          name: "MoneyControl policy",
+          value: entry.researchStatus?.sentiment.detail.includes("MoneyControl ingestion is intentionally disabled")
+            ? "Disabled pending approval"
+            : "Not wired"
+        }
       ]
     : [
         { name: "Sentiment score", value: signalScoreText(sentimentScore) },
@@ -2925,6 +3405,12 @@ function buildTradePlan(
               : entry.researchStatus?.sentiment.state === "live"
                 ? "Live tagged feed"
                 : "Unavailable"
+        },
+        {
+          name: "MoneyControl policy",
+          value: entry.researchStatus?.sentiment.detail.includes("MoneyControl ingestion is intentionally disabled")
+            ? "Disabled pending approval"
+            : "Not wired"
         }
       ];
 
@@ -2947,11 +3433,38 @@ function buildTradePlan(
       value: `${entry.sentiment?.analystMentionCount ?? 0} recent headlines`
     }
   ];
+  const derivativesSignals: Signal[] = derivatives
+    ? [
+        { name: "NSE derivatives source", value: entry.researchStatus?.derivatives?.state ?? "unknown" },
+        { name: "Put-call ratio", value: ratioText(derivatives.putCallRatio) },
+        {
+          name: "Put OI / Call OI",
+          value: `${compactNumber(derivatives.putOpenInterest)} / ${compactNumber(derivatives.callOpenInterest)}`
+        },
+        { name: "Max put OI strike", value: priceText(derivatives.maxPutOiStrike) },
+        { name: "Max call OI strike", value: priceText(derivatives.maxCallOiStrike) },
+        {
+          name: "Futures short build-up",
+          value: derivatives.shortBuildUp ? "Yes" : "No"
+        }
+      ]
+    : [
+        {
+          name: "NSE derivatives source",
+          value:
+            entry.researchStatus?.derivatives?.state === "cached"
+              ? "Cached snapshot"
+              : entry.researchStatus?.derivatives?.state === "live"
+                ? "Live NSE feed"
+                : "Unavailable"
+        }
+      ];
 
   const marketContext = [
     `Latest session change: ${percentText(metrics.sessionChangePct)} while Nifty 50 moved ${percentText(metrics.benchmarkSessionChangePct)}.`,
     `Current price ${priceText(metrics.currentPrice)} versus 52-week range ${priceText(metrics.fiftyTwoWeekLow)} to ${priceText(metrics.fiftyTwoWeekHigh)}.`,
     `Current volume ${compactNumber(metrics.currentVolume)} versus 20-day average ${compactNumber(metrics.avgVolume20)}.`,
+    ...(derivatives ? [`NSE derivatives: ${derivatives.summary}`] : []),
     ...(entry.sentiment?.headlines.slice(0, 3).map((headline) => `${headline.source}: ${headline.title}`) ?? [])
   ];
 
@@ -2971,7 +3484,7 @@ function buildTradePlan(
     sentimentSignals,
     earningsSignals,
     analystSignals,
-    riskSignals: riskFeedback.signals,
+    riskSignals: [...derivativesSignals, ...riskFeedback.signals].slice(0, 8),
     newsContext: marketContext
   };
 }
@@ -3013,7 +3526,7 @@ function buildCurrentRecommendationsForDate(
 ) {
   const sectorContexts = buildSectorFundamentalContextMap(liveSeries);
   const recommendations = liveSeries
-    .map((series) => {
+    .map((series): StockAnalysis | null => {
       const index = series.indexByDate.get(date);
 
       if (index === undefined) {
@@ -3040,6 +3553,7 @@ function buildCurrentRecommendationsForDate(
         latestSessionChangePct: enrichedMetrics.sessionChangePct,
         fundamentals: series.fundamentals,
         sentiment: series.sentiment,
+        derivatives: series.derivatives,
         researchStatus: series.researchStatus,
         profiles: {
           single_day: buildTradePlan(
@@ -3158,6 +3672,7 @@ function describeOutcomeNote(
 
 function evaluateOutcome(
   series: MarketSeries,
+  benchmark: MarketSeries,
   batchDate: string,
   horizon: HorizonId,
   entryPrice: number,
@@ -3172,6 +3687,7 @@ function evaluateOutcome(
       evaluatedOn: batchDate,
       holdingDays: 0,
       returnPct: 0,
+      benchmarkReturnPct: null,
       notes: "The recommendation date could not be mapped to live price history."
     };
   }
@@ -3196,6 +3712,7 @@ function evaluateOutcome(
       evaluatedOn: bar.date,
       holdingDays: index - batchIndex,
       returnPct: roundMetric(pctChange(exitPrice, entryPrice) ?? 0),
+      benchmarkReturnPct: benchmarkReturnBetween(benchmark, batchDate, bar.date),
       notes: `${describeOutcomeNote(
         series,
         batchIndex,
@@ -3215,8 +3732,20 @@ function evaluateOutcome(
     evaluatedOn: finalBar.date,
     holdingDays: lastIndex - batchIndex,
     returnPct: roundMetric(pctChange(finalBar.close, entryPrice) ?? 0),
+    benchmarkReturnPct: benchmarkReturnBetween(benchmark, batchDate, finalBar.date),
     notes: `The trade remains open after ${lastIndex - batchIndex} trading day(s); latest close is ${priceText(finalBar.close)}.`
   };
+}
+
+function benchmarkReturnBetween(benchmark: MarketSeries, startDate: string, endDate: string) {
+  const startIndex = benchmark.indexByDate.get(startDate);
+  const endIndex = benchmark.indexByDate.get(endDate);
+
+  if (startIndex === undefined || endIndex === undefined || endIndex <= startIndex) {
+    return null;
+  }
+
+  return roundMetric(pctChange(benchmark.bars[endIndex].close, benchmark.bars[startIndex].close) ?? 0);
 }
 
 function deriveStopLossLearning(history: HistoricalBatch[]): StopLossLearningMap {
@@ -3276,7 +3805,8 @@ function deriveStopLossLearning(history: HistoricalBatch[]): StopLossLearningMap
 function toHistoricalRecommendation(
   recommendation: StockAnalysis,
   batchDate: string,
-  seriesBySymbol: Map<string, MarketSeries>
+  seriesBySymbol: Map<string, MarketSeries>,
+  benchmark: MarketSeries
 ): HistoricalStockRecommendation {
   const series = seriesBySymbol.get(recommendation.symbol);
 
@@ -3298,6 +3828,7 @@ function toHistoricalRecommendation(
       summary: livePlan.summary,
       outcome: evaluateOutcome(
         series,
+        benchmark,
         batchDate,
         horizon,
         livePlan.entryPrice,
@@ -3332,7 +3863,7 @@ function buildHistoricalBatches(liveSeries: MarketSeries[], benchmark: MarketSer
 
   return historicalBatchDates(benchmark).map((date) => {
     const recommendations = buildCurrentRecommendationsForDate(date, liveSeries, benchmark).map(
-      (recommendation) => toHistoricalRecommendation(recommendation, date, seriesBySymbol)
+      (recommendation) => toHistoricalRecommendation(recommendation, date, seriesBySymbol, benchmark)
     );
 
     return {
@@ -3418,6 +3949,7 @@ function buildSearchStockForDate(
     latestSessionChangePct: enrichedMetrics.sessionChangePct,
     fundamentals: series.fundamentals,
     sentiment: series.sentiment,
+    derivatives: series.derivatives,
     researchStatus: series.researchStatus,
     profiles: {
       single_day: buildSearchPlan("single_day"),
@@ -3556,7 +4088,7 @@ async function buildLiveDataset() {
     exchange: "NSE",
     universe: `Nifty 100 universe (${liveSeries.length} live symbols)`,
     dataSource: liveDataSourceInfo(
-      `${liveSeries.length}/${MARKET_UNIVERSE.length} Nifty 100 symbols refreshed successfully with benchmark ${BENCHMARK.symbol}. Fundamentals: ${researchCoverage.fundamentalsLive} live / ${researchCoverage.fundamentalsCached} cached / ${researchCoverage.fundamentalsUnavailable} unavailable. News: ${researchCoverage.sentimentLive} live / ${researchCoverage.sentimentCached} cached / ${researchCoverage.sentimentUnavailable} unavailable. Tagged headlines: ${researchCoverage.nseAnnouncementHeadlines} NSE announcements, ${researchCoverage.googleNewsHeadlines} Google News.`,
+      `${liveSeries.length}/${MARKET_UNIVERSE.length} Nifty 100 symbols refreshed successfully with benchmark ${BENCHMARK.symbol}. Fundamentals: ${researchCoverage.fundamentalsLive} live / ${researchCoverage.fundamentalsCached} cached / ${researchCoverage.fundamentalsUnavailable} unavailable. News: ${researchCoverage.sentimentLive} live / ${researchCoverage.sentimentCached} cached / ${researchCoverage.sentimentUnavailable} unavailable. NSE derivatives: ${researchCoverage.derivativesLive ?? 0} live / ${researchCoverage.derivativesCached ?? 0} cached / ${researchCoverage.derivativesUnavailable ?? 0} unavailable. Tagged headlines: ${researchCoverage.nseAnnouncementHeadlines} NSE announcements, ${researchCoverage.googleNewsHeadlines} Google News, ${researchCoverage.moneyControlHeadlines ?? 0} MoneyControl. ${researchCoverage.moneyControlDecision}`,
       liveSeries.length,
       researchCoverage
     ),
@@ -3572,7 +4104,7 @@ async function buildLiveDataset() {
   const finalDataset = {
     ...dataset,
     dataSource: liveDataSourceInfo(
-      `${liveSeries.length}/${MARKET_UNIVERSE.length} Nifty 100 symbols refreshed successfully with benchmark ${BENCHMARK.symbol}. Fundamentals: ${researchCoverage.fundamentalsLive} live / ${researchCoverage.fundamentalsCached} cached / ${researchCoverage.fundamentalsUnavailable} unavailable. News: ${researchCoverage.sentimentLive} live / ${researchCoverage.sentimentCached} cached / ${researchCoverage.sentimentUnavailable} unavailable. Tagged headlines: ${researchCoverage.nseAnnouncementHeadlines} NSE announcements, ${researchCoverage.googleNewsHeadlines} Google News.${persisted.latestSnapshot ? " Latest snapshot persisted locally." : " Persistent filesystem cache was unavailable, so the app is using in-memory caching for this runtime."}${persisted.archivedBatch ? " Daily batch snapshot archived." : " Daily batch archive write was unavailable."}`,
+      `${liveSeries.length}/${MARKET_UNIVERSE.length} Nifty 100 symbols refreshed successfully with benchmark ${BENCHMARK.symbol}. Fundamentals: ${researchCoverage.fundamentalsLive} live / ${researchCoverage.fundamentalsCached} cached / ${researchCoverage.fundamentalsUnavailable} unavailable. News: ${researchCoverage.sentimentLive} live / ${researchCoverage.sentimentCached} cached / ${researchCoverage.sentimentUnavailable} unavailable. NSE derivatives: ${researchCoverage.derivativesLive ?? 0} live / ${researchCoverage.derivativesCached ?? 0} cached / ${researchCoverage.derivativesUnavailable ?? 0} unavailable. Tagged headlines: ${researchCoverage.nseAnnouncementHeadlines} NSE announcements, ${researchCoverage.googleNewsHeadlines} Google News, ${researchCoverage.moneyControlHeadlines ?? 0} MoneyControl. ${researchCoverage.moneyControlDecision}${persisted.latestSnapshot ? " Latest snapshot persisted locally." : " Persistent filesystem cache was unavailable, so the app is using in-memory caching for this runtime."}${persisted.archivedBatch ? " Daily batch snapshot archived." : " Daily batch archive write was unavailable."}`,
       liveSeries.length,
       researchCoverage
     )
@@ -3595,18 +4127,18 @@ function annotateFallbackDataset(
 export async function loadRecommendationData(): Promise<RecommendationDataset> {
   const memoryDataset = readDatasetMemoryCache();
 
-  if (memoryDataset) {
+  if (memoryDataset && !isDatasetStale(memoryDataset)) {
     return memoryDataset;
   }
 
   const cachedDataset = await readGeneratedDataset();
 
-  if (cachedDataset) {
+  if (cachedDataset && !isDatasetStale(cachedDataset)) {
     return rememberDataset(
       annotateFallbackDataset(
         cachedDataset,
         "cached",
-        `Using the last successful live snapshot from ${cachedDataset.currentBatch.generatedAt}.`
+        cachedDatasetDetail(cachedDataset)
       )
     );
   }
@@ -3615,6 +4147,16 @@ export async function loadRecommendationData(): Promise<RecommendationDataset> {
 
   if (liveDataset) {
     return liveDataset;
+  }
+
+  if (cachedDataset) {
+    return rememberDataset(
+      annotateFallbackDataset(
+        cachedDataset,
+        "cached",
+        cachedDatasetDetail(cachedDataset, true)
+      )
+    );
   }
 
   return rememberDataset(

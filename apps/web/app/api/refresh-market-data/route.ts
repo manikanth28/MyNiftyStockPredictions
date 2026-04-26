@@ -1,14 +1,40 @@
 import { NextResponse } from "next/server";
-import { getRecommendationRefreshStatus, refreshRecommendationData } from "@/lib/recommendation-data";
+import {
+  getMarketRefreshReadiness,
+  getRecommendationRefreshStatus,
+  listAutomationRuns,
+  recordSkippedRefreshRun,
+  refreshRecommendationData
+} from "@/lib/recommendation-data";
+import type { AutomationRefreshTrigger } from "@/lib/recommendation-data";
 
 export const dynamic = "force-dynamic";
 
 type RefreshRequestBody = {
   scope?: string;
+  trigger?: AutomationRefreshTrigger;
+  force?: boolean;
 };
 
+const REFRESH_TRIGGERS = new Set<AutomationRefreshTrigger>(["manual", "auto", "scheduler"]);
+
+function normalizeRefreshTrigger(value: unknown): AutomationRefreshTrigger {
+  return typeof value === "string" && REFRESH_TRIGGERS.has(value as AutomationRefreshTrigger)
+    ? (value as AutomationRefreshTrigger)
+    : "manual";
+}
+
 export async function GET() {
-  return NextResponse.json(getRecommendationRefreshStatus(), {
+  const [readiness, automationRuns] = await Promise.all([
+    getMarketRefreshReadiness(),
+    listAutomationRuns(10)
+  ]);
+
+  return NextResponse.json({
+    ...getRecommendationRefreshStatus(),
+    readiness,
+    automationRuns
+  }, {
     headers: {
       "Cache-Control": "no-store"
     }
@@ -34,7 +60,33 @@ export async function POST(request: Request) {
     );
   }
 
-  const dataset = await refreshRecommendationData();
+  const trigger = normalizeRefreshTrigger(body.trigger);
+  const force = body.force === true;
+  const readiness = await getMarketRefreshReadiness();
+
+  if (trigger === "scheduler" && !force && !readiness.shouldRefresh) {
+    const run = await recordSkippedRefreshRun(trigger, readiness, readiness.detail, force);
+
+    return NextResponse.json({
+      refreshed: false,
+      skipped: true,
+      scope: "all",
+      message: readiness.detail,
+      readiness,
+      run,
+      automationRuns: await listAutomationRuns(10)
+    }, {
+      headers: {
+        "Cache-Control": "no-store"
+      }
+    });
+  }
+
+  const dataset = await refreshRecommendationData({
+    trigger,
+    force,
+    readiness
+  });
 
   if (!dataset) {
     return NextResponse.json(
@@ -53,6 +105,8 @@ export async function POST(request: Request) {
     message: "Full market dataset refreshed successfully.",
     generatedAt: dataset.currentBatch.generatedAt,
     batchDate: dataset.currentBatch.batchDate,
-    dataSource: dataset.dataSource
+    dataSource: dataset.dataSource,
+    readiness,
+    automationRuns: await listAutomationRuns(10)
   });
 }

@@ -1,4 +1,5 @@
 import type {
+  DerivativesSnapshot,
   FundamentalSnapshot,
   NewsHeadline,
   ResearchSourceStatus,
@@ -22,6 +23,7 @@ export type CompanyResearch = {
   industry?: string;
   fundamentals: FundamentalSnapshot | null;
   sentiment: SentimentSnapshot | null;
+  derivatives: DerivativesSnapshot | null;
   researchStatus: StockResearchStatus;
 };
 
@@ -53,9 +55,25 @@ type YahooSearchResponse = {
   quotes?: YahooSearchQuote[];
 };
 
-type CachedResearch = Pick<StockAnalysis, "fundamentals" | "sentiment" | "researchStatus"> | null;
+type CachedResearch = Pick<StockAnalysis, "fundamentals" | "sentiment" | "derivatives" | "researchStatus"> | null;
 type NseAnnouncementItem = Record<string, unknown>;
 type NseAnnouncementResponse = NseAnnouncementItem[] | { data?: NseAnnouncementItem[] };
+type NseOptionLeg = Record<string, unknown>;
+type NseOptionChainRecord = {
+  strikePrice?: number;
+  expiryDate?: string;
+  PE?: NseOptionLeg;
+  CE?: NseOptionLeg;
+};
+type NseOptionChainResponse = {
+  records?: {
+    underlyingValue?: number;
+    expiryDates?: string[];
+    data?: NseOptionChainRecord[];
+  };
+};
+type NseDerivativeItem = Record<string, unknown>;
+type NseDerivativeResponse = NseDerivativeItem[] | { data?: NseDerivativeItem[] };
 type NseQuoteEquityResponse = {
   info?: Record<string, unknown>;
   metadata?: Record<string, unknown>;
@@ -78,6 +96,14 @@ type YahooQuoteSummaryResponse = {
     result?: YahooQuoteSummaryResult[];
   };
 };
+
+const MONEYCONTROL_NEWS_ALLOWED = process.env.MONEYCONTROL_NEWS_ALLOWED === "true";
+
+export function moneyControlNewsDecision() {
+  return MONEYCONTROL_NEWS_ALLOWED
+    ? "MoneyControl ingestion is allowed by configuration, but no stable public endpoint is wired yet; NSE announcements remain the primary exchange-filed source."
+    : "MoneyControl ingestion is intentionally disabled until legal and technical approval for the source is explicit.";
+}
 
 const POSITIVE_WORDS = [
   "beat",
@@ -1667,6 +1693,155 @@ async function fetchNseAnnouncementHeadlines(symbol: string, companyName: string
     .slice(0, 8);
 }
 
+function optionLegNumber(leg: NseOptionLeg | undefined, ...keys: string[]) {
+  return hasRecord(leg) ? recordNumber(leg, ...keys) : null;
+}
+
+function derivativeRecords(payload: NseDerivativeResponse) {
+  return Array.isArray(payload) ? payload : Array.isArray(payload.data) ? payload.data : [];
+}
+
+function recordStringValue(record: Record<string, unknown>, ...keys: string[]) {
+  for (const key of keys) {
+    const value = record[key];
+
+    if (typeof value === "string" && value.trim()) {
+      return value.trim();
+    }
+  }
+
+  return null;
+}
+
+function isSymbolDerivativeRow(record: Record<string, unknown>, symbol: string) {
+  const values = [
+    recordStringValue(record, "underlying", "symbol", "underlyingSymbol", "metaSymbol"),
+    recordStringValue(record, "identifier", "instrument", "instrumentType")
+  ]
+    .filter((value): value is string => Boolean(value))
+    .map((value) => value.toUpperCase());
+
+  return values.some((value) => value === symbol || value.includes(`${symbol}`));
+}
+
+async function fetchNseFuturesSnapshot(symbol: string) {
+  const payload = await fetchNseJson<NseDerivativeResponse>(
+    "https://www.nseindia.com/api/liveEquity-derivatives?index=stock_fut"
+  );
+  const record = derivativeRecords(payload)
+    .filter((item): item is Record<string, unknown> => hasRecord(item))
+    .find((item) => isSymbolDerivativeRow(item, symbol));
+
+  if (!record) {
+    return {
+      futuresOpenInterest: null,
+      futuresChangeInOpenInterest: null,
+      futuresPriceChangePct: null
+    };
+  }
+
+  return {
+    futuresOpenInterest: recordNumber(record, "openInterest", "oi", "OPEN_INT"),
+    futuresChangeInOpenInterest: recordNumber(
+      record,
+      "changeinOpenInterest",
+      "changeInOpenInterest",
+      "pChangeinOpenInterest",
+      "CHANGE_IN_OI"
+    ),
+    futuresPriceChangePct: recordNumber(record, "pChange", "perChange", "changePct", "P_CHANGE")
+  };
+}
+
+async function fetchNseDerivativesSnapshot(symbol: string): Promise<DerivativesSnapshot | null> {
+  const optionChain = await fetchNseJson<NseOptionChainResponse>(
+    `https://www.nseindia.com/api/option-chain-equities?symbol=${encodeURIComponent(symbol)}`
+  );
+  const records = optionChain.records?.data ?? [];
+  const nearestExpiry = optionChain.records?.expiryDates?.[0] ?? null;
+  const expiryRecords = nearestExpiry
+    ? records.filter((record) => record.expiryDate === nearestExpiry)
+    : records;
+
+  if (!expiryRecords.length) {
+    return null;
+  }
+
+  const totals = expiryRecords.reduce(
+    (total, record) => {
+      const putOi = optionLegNumber(record.PE, "openInterest") ?? 0;
+      const callOi = optionLegNumber(record.CE, "openInterest") ?? 0;
+      const putChange = optionLegNumber(record.PE, "changeinOpenInterest") ?? 0;
+      const callChange = optionLegNumber(record.CE, "changeinOpenInterest") ?? 0;
+
+      total.putOpenInterest += putOi;
+      total.callOpenInterest += callOi;
+      total.putChangeInOpenInterest += putChange;
+      total.callChangeInOpenInterest += callChange;
+
+      if (putOi > total.maxPutOi) {
+        total.maxPutOi = putOi;
+        total.maxPutOiStrike = record.strikePrice ?? null;
+      }
+
+      if (callOi > total.maxCallOi) {
+        total.maxCallOi = callOi;
+        total.maxCallOiStrike = record.strikePrice ?? null;
+      }
+
+      return total;
+    },
+    {
+      putOpenInterest: 0,
+      putChangeInOpenInterest: 0,
+      callOpenInterest: 0,
+      callChangeInOpenInterest: 0,
+      maxPutOi: 0,
+      maxPutOiStrike: null as number | null,
+      maxCallOi: 0,
+      maxCallOiStrike: null as number | null
+    }
+  );
+  const futures = await fetchNseFuturesSnapshot(symbol).catch(() => ({
+    futuresOpenInterest: null,
+    futuresChangeInOpenInterest: null,
+    futuresPriceChangePct: null
+  }));
+  const putCallRatio =
+    totals.callOpenInterest > 0 ? Number((totals.putOpenInterest / totals.callOpenInterest).toFixed(2)) : null;
+  const shortBuildUp =
+    (futures.futuresChangeInOpenInterest ?? 0) > 0 && (futures.futuresPriceChangePct ?? 0) < 0;
+  const longBuildUp =
+    (futures.futuresChangeInOpenInterest ?? 0) > 0 && (futures.futuresPriceChangePct ?? 0) > 0;
+  const summaryParts = [
+    putCallRatio !== null ? `PCR ${formatSummaryMetric(putCallRatio, "x", 2)}` : null,
+    totals.maxPutOiStrike !== null ? `max put OI ${formatSummaryMetric(totals.maxPutOiStrike, "", 0)}` : null,
+    totals.maxCallOiStrike !== null ? `max call OI ${formatSummaryMetric(totals.maxCallOiStrike, "", 0)}` : null,
+    shortBuildUp ? "futures short build-up" : null,
+    longBuildUp ? "futures long build-up" : null
+  ].filter((value): value is string => Boolean(value));
+
+  return {
+    source: "NSE option chain + equity derivatives",
+    observedAt: new Date().toISOString(),
+    underlyingValue: optionChain.records?.underlyingValue ?? null,
+    putCallRatio,
+    nearestExpiry,
+    putOpenInterest: totals.putOpenInterest || null,
+    putChangeInOpenInterest: totals.putChangeInOpenInterest || null,
+    callOpenInterest: totals.callOpenInterest || null,
+    callChangeInOpenInterest: totals.callChangeInOpenInterest || null,
+    maxPutOiStrike: totals.maxPutOiStrike,
+    maxCallOiStrike: totals.maxCallOiStrike,
+    futuresOpenInterest: futures.futuresOpenInterest,
+    futuresChangeInOpenInterest: futures.futuresChangeInOpenInterest,
+    futuresPriceChangePct: futures.futuresPriceChangePct,
+    shortBuildUp,
+    longBuildUp,
+    summary: summaryParts.length ? summaryParts.join(" · ") : "NSE derivatives snapshot loaded."
+  };
+}
+
 function statusForSource(
   provider: string,
   state: ResearchSourceStatus["state"],
@@ -1691,14 +1866,16 @@ export async function fetchCompanyResearch(
     screenerFundamentalsLive,
     yahooFundamentalsLive,
     nseHeadlinesResult,
-    googleHeadlinesResult
+    googleHeadlinesResult,
+    derivativesResult
   ] =
     await Promise.allSettled([
-    fetchNseQuoteFundamentals(lookup.symbol, lookup.companyName),
-    fetchScreenerFundamentals(lookup.symbol),
-    fetchYahooFundamentals(lookup.yahooSymbol, lookup.companyName),
-    fetchNseAnnouncementHeadlines(lookup.symbol, lookup.companyName, lookup.sector),
-    fetchGoogleNewsHeadlines(lookup.companyName, lookup.symbol, lookup.sector)
+      fetchNseQuoteFundamentals(lookup.symbol, lookup.companyName),
+      fetchScreenerFundamentals(lookup.symbol),
+      fetchYahooFundamentals(lookup.yahooSymbol, lookup.companyName),
+      fetchNseAnnouncementHeadlines(lookup.symbol, lookup.companyName, lookup.sector),
+      fetchGoogleNewsHeadlines(lookup.companyName, lookup.symbol, lookup.sector),
+      fetchNseDerivativesSnapshot(lookup.symbol)
     ]);
 
   const nseLive = nseFundamentalsLive.status === "fulfilled" ? nseFundamentalsLive.value : null;
@@ -1779,25 +1956,49 @@ export async function fetchCompanyResearch(
   const sentiment = sentimentLive ?? cachedResearch?.sentiment ?? null;
   const nseCount = nseHeadlinesResult.status === "fulfilled" ? nseHeadlinesResult.value.length : 0;
   const googleCount = googleHeadlinesResult.status === "fulfilled" ? googleHeadlinesResult.value.length : 0;
+  const moneyControlDecision = moneyControlNewsDecision();
   const sentimentStatus =
     sentimentLive
       ? statusForSource(
           "NSE Announcements + Google News",
           "live",
-          `${liveHeadlines.length} tagged headlines loaded (${nseCount} from NSE announcements, ${googleCount} from Google News).`,
+          `${liveHeadlines.length} tagged headlines loaded (${nseCount} from NSE announcements, ${googleCount} from Google News). ${moneyControlDecision}`,
           liveHeadlines.length
         )
       : cachedResearch?.sentiment
         ? statusForSource(
             "NSE Announcements + Google News",
             "cached",
-            "Live headline sources were unavailable in this batch, so the most recent cached tagged headlines were reused.",
+            `Live headline sources were unavailable in this batch, so the most recent cached tagged headlines were reused. ${moneyControlDecision}`,
             cachedResearch.sentiment.headlines.length
           )
         : statusForSource(
             "NSE Announcements + Google News",
             "unavailable",
-            "Live headline sources were unavailable in this batch and no cached tagged headlines existed for fallback.",
+            `Live headline sources were unavailable in this batch and no cached tagged headlines existed for fallback. ${moneyControlDecision}`,
+            0
+          );
+  const derivativesLive = derivativesResult.status === "fulfilled" ? derivativesResult.value : null;
+  const derivatives = derivativesLive ?? cachedResearch?.derivatives ?? null;
+  const derivativesStatus =
+    derivativesLive
+      ? statusForSource(
+          "NSE option chain + equity derivatives",
+          "live",
+          `Live NSE derivatives loaded: ${derivativesLive.summary}`,
+          1
+        )
+      : cachedResearch?.derivatives
+        ? statusForSource(
+            cachedResearch.derivatives.source,
+            "cached",
+            "Live NSE derivatives were unavailable in this batch, so the most recent cached options/futures snapshot was reused.",
+            1
+          )
+        : statusForSource(
+            "NSE option chain + equity derivatives",
+            "unavailable",
+            "Live NSE derivatives were unavailable in this batch and no cached options/futures snapshot existed for fallback.",
             0
           );
 
@@ -1817,15 +2018,25 @@ export async function fetchCompanyResearch(
     });
   }
 
+  if (derivativesStatus.state !== "live") {
+    structuredResearchLog("warn", "research.derivatives", {
+      symbol: lookup.symbol,
+      state: derivativesStatus.state,
+      detail: derivativesStatus.detail
+    });
+  }
+
   return {
     companyName: lookup.companyName,
     sector: lookup.sector,
     industry: lookup.industry,
     fundamentals,
     sentiment,
+    derivatives,
     researchStatus: {
       fundamentals: fundamentalsStatus,
-      sentiment: sentimentStatus
+      sentiment: sentimentStatus,
+      derivatives: derivativesStatus
     }
   };
 }

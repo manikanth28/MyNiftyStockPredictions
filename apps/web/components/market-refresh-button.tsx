@@ -1,10 +1,10 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
-
+import { useEffect, useRef, useState } from "react";
 type RefreshTone = "neutral" | "success" | "error";
 type RefreshJobState = "idle" | "running" | "succeeded" | "failed";
+type RefreshTrigger = "manual" | "auto";
 
 type RefreshApiResponse = {
   refreshed?: boolean;
@@ -26,6 +26,14 @@ type RefreshStatusResponse = {
   finishedAt: string | null;
   generatedAt: string | null;
   error: string | null;
+  readiness?: {
+    expectedBatchDate: string;
+    latestBatchDate: string | null;
+    isTradingDay: boolean;
+    isMarketSession: boolean;
+    shouldRefresh: boolean;
+    detail: string;
+  };
 };
 
 type MarketRefreshButtonProps = {
@@ -35,9 +43,12 @@ type MarketRefreshButtonProps = {
   hint?: string;
   idleLabel?: string;
   pendingLabel?: string;
+  autoRefresh?: boolean;
+  autoRefreshIntervalMs?: number;
 };
 
 const REFRESH_STATUS_POLL_MS = 1200;
+const AUTO_REFRESH_CHECK_MS = 5 * 60 * 1000;
 
 const PHASE_LABELS: Record<string, string> = {
   ready: "Ready",
@@ -90,9 +101,12 @@ export function MarketRefreshButton({
   feedbackClassName = "market-refresh-feedback",
   hint,
   idleLabel = "Refresh all data",
-  pendingLabel = "Refreshing all data..."
+  pendingLabel = "Refreshing all data...",
+  autoRefresh = true,
+  autoRefreshIntervalMs = AUTO_REFRESH_CHECK_MS
 }: MarketRefreshButtonProps) {
   const router = useRouter();
+  const autoRefreshAttemptKeyRef = useRef<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
   const [feedbackTone, setFeedbackTone] = useState<RefreshTone>("neutral");
@@ -162,9 +176,15 @@ export function MarketRefreshButton({
     };
   }, [isRefreshing]);
 
-  async function handleRefresh() {
+  async function runRefresh({
+    startMessage = "Starting full market refresh...",
+    trigger = "manual"
+  }: {
+    startMessage?: string;
+    trigger?: RefreshTrigger;
+  } = {}) {
     setIsRefreshing(true);
-    setFeedback("Starting full market refresh...");
+    setFeedback(startMessage);
     setFeedbackTone("neutral");
     setRefreshStatus((current) =>
       current?.state === "running"
@@ -192,7 +212,7 @@ export function MarketRefreshButton({
         headers: {
           "Content-Type": "application/json"
         },
-        body: JSON.stringify({ scope: "all" })
+        body: JSON.stringify({ scope: "all", trigger })
       });
       const payload = (await response.json()) as RefreshApiResponse;
       const latestStatus = await readRefreshStatus().catch(() => null);
@@ -230,6 +250,62 @@ export function MarketRefreshButton({
       setIsRefreshing(false);
     }
   }
+
+  async function handleRefresh() {
+    await runRefresh();
+  }
+
+  useEffect(() => {
+    if (!autoRefresh || isRefreshing) {
+      return;
+    }
+
+    let active = true;
+    let intervalId: number | null = null;
+
+    const checkForMarketRefresh = async () => {
+      try {
+        const status = await readRefreshStatus();
+
+        if (!active) {
+          return;
+        }
+
+        setRefreshStatus(status);
+
+        if (!status.readiness?.shouldRefresh || status.state === "running") {
+          return;
+        }
+
+        const attemptKey = `${status.readiness.expectedBatchDate}:${status.readiness.latestBatchDate ?? "none"}`;
+
+        if (autoRefreshAttemptKeyRef.current === attemptKey) {
+          return;
+        }
+
+        autoRefreshAttemptKeyRef.current = attemptKey;
+        await runRefresh({
+          startMessage: `Market session is open. Scanning NSE symbols for ${status.readiness.expectedBatchDate}...`,
+          trigger: "auto"
+        });
+      } catch {
+        // Auto-refresh must not block manual refresh if the readiness probe fails.
+      }
+    };
+
+    void checkForMarketRefresh();
+    intervalId = window.setInterval(() => {
+      void checkForMarketRefresh();
+    }, autoRefreshIntervalMs);
+
+    return () => {
+      active = false;
+
+      if (intervalId !== null) {
+        window.clearInterval(intervalId);
+      }
+    };
+  }, [autoRefresh, autoRefreshIntervalMs, isRefreshing]);
 
   const runningStatus = refreshStatus?.state === "running" ? refreshStatus : null;
   const refreshProgressLabel = runningStatus

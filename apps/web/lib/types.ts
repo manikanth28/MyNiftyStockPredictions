@@ -80,9 +80,30 @@ export type ResearchSourceStatus = {
   itemCount?: number;
 };
 
+export type DerivativesSnapshot = {
+  source: string;
+  observedAt: string;
+  underlyingValue: number | null;
+  putCallRatio: number | null;
+  nearestExpiry: string | null;
+  putOpenInterest: number | null;
+  putChangeInOpenInterest: number | null;
+  callOpenInterest: number | null;
+  callChangeInOpenInterest: number | null;
+  maxPutOiStrike: number | null;
+  maxCallOiStrike: number | null;
+  futuresOpenInterest: number | null;
+  futuresChangeInOpenInterest: number | null;
+  futuresPriceChangePct: number | null;
+  shortBuildUp: boolean;
+  longBuildUp: boolean;
+  summary: string;
+};
+
 export type StockResearchStatus = {
   fundamentals: ResearchSourceStatus;
   sentiment: ResearchSourceStatus;
+  derivatives?: ResearchSourceStatus;
 };
 
 export type StockSearchSuggestion = {
@@ -125,6 +146,7 @@ export type StockAnalysis = {
   latestSessionChangePct?: number | null;
   fundamentals?: FundamentalSnapshot | null;
   sentiment?: SentimentSnapshot | null;
+  derivatives?: DerivativesSnapshot | null;
   researchStatus?: StockResearchStatus;
   profiles: Record<HorizonId, RecommendationPlan>;
 };
@@ -134,6 +156,7 @@ export type RecommendationOutcome = {
   evaluatedOn: string;
   holdingDays: number;
   returnPct: number;
+  benchmarkReturnPct?: number | null;
   notes: string;
 };
 
@@ -186,6 +209,38 @@ export type DailyPerformance = {
   averageReturnPct: number | null;
 };
 
+export type ConfidenceCalibrationBucket = {
+  label: string;
+  total: number;
+  closed: number;
+  averageScore: number | null;
+  hitRate: number | null;
+  averageReturnPct: number | null;
+};
+
+export type HorizonBacktestSummary = {
+  horizon: HorizonId;
+  label: string;
+  total: number;
+  closed: number;
+  open: number;
+  hitRate: number | null;
+  averageReturnPct: number | null;
+  maxDrawdownPct: number | null;
+  averageHoldingDays: number | null;
+  benchmarkReturnPct: number | null;
+  benchmarkCoverage: number;
+  alphaPct: number | null;
+  confidenceCalibration: ConfidenceCalibrationBucket[];
+};
+
+export type BacktestEvaluation = {
+  generatedAt: string;
+  batchCount: number;
+  benchmarkLabel: string;
+  horizons: HorizonBacktestSummary[];
+};
+
 export type StockPerformanceHistoryEntry = {
   batchDate: string;
   publishedAt: string;
@@ -216,6 +271,11 @@ export type DataSourceInfo = {
     sentimentUnavailable: number;
     nseAnnouncementHeadlines: number;
     googleNewsHeadlines: number;
+    moneyControlHeadlines: number;
+    moneyControlDecision: string;
+    derivativesLive?: number;
+    derivativesCached?: number;
+    derivativesUnavailable?: number;
   };
 };
 

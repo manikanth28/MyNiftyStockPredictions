@@ -8,7 +8,7 @@ This repository now includes a research-first stock recommendation system for **
 - **Market:** liquid NSE equities, now starting from a dedicated **Nifty 100 universe master**
 - **Delivery:** web dashboard
 - **Mode:** research and decision support, not broker execution
-- **Batch cadence:** run **after market close** on trading days and publish a next-session trade plan
+- **Batch cadence:** refresh from market open onward on trading days and archive a dated recommendation batch
 - **MVP horizons:** single-day, swing, position, and long-term
 - **Later phase:** intraday once a separate high-frequency data stack exists
 
@@ -36,13 +36,14 @@ data/           Shared sample recommendation data used during scaffolding
 ## Live recommendation flow
 
 - The web app fetches **live Yahoo Finance chart data** for the **Nifty 100 universe** plus the Nifty 50 benchmark.
-- Recommendations are scored from recent momentum, relative strength, moving-average trend, volume, volatility, **chart-structure analysis** (breakouts, candlestick patterns, MACD, Bollinger-band behavior, range behavior, moving-average slope, and clearer bullish/bearish trend classification), richer fundamentals (P/E, P/B, ROE, ROCE, debt/equity, earnings growth, and cash-flow fields with sector-aware context), and a tagged news layer that now merges **NSE announcements** with **Google News**.
+- Recommendations are scored from recent momentum, relative strength, moving-average trend, volume, volatility, **chart-structure analysis** (breakouts, candlestick patterns, MACD, Bollinger-band behavior, range behavior, moving-average slope, and clearer bullish/bearish trend classification), richer fundamentals (P/E, P/B, ROE, ROCE, debt/equity, earnings growth, and cash-flow fields with sector-aware context), **NSE derivatives data** (put OI, call OI, PCR, max put/call OI strikes, and futures short/long build-up), and a tagged news layer that now merges **NSE announcements** with **Google News**.
 - The live model now also applies **stop-loss learning**: repeated recent stop-loss failures reduce future model aggressiveness for similar setups.
 - Research fetches now track whether fundamentals and news were loaded **live**, reused from **cached snapshots**, or remain **unavailable** for the current batch.
 - Fundamentals now prefer **NSE India quote endpoints** for live market-cap and valuation coverage, then enrich or fall back to **Screener.in**, and only then try **Yahoo Finance**. Screener requests retry, fall back from consolidated pages to standard company pages, and now run with cached NSE session reuse, fail-fast request timeouts, and a moderate default research concurrency to keep manual refresh responsive without spiking upstream dropouts. Yahoo fallback remains best-effort because public Yahoo finance endpoints can return 401 in some environments.
 - The app also backtests prior daily batches from the same historical price series so the dashboard can maintain horizon-specific success rates.
 - On a successful live refresh, the generated dataset is cached to `data/generated-recommendations.json`.
 - The dashboard and stock workspace now include a **manual "Refresh all market data"** control that forces a full rebuild of prices, technical signals, fundamentals, sentiment, and the cached generated snapshot on demand.
+- To refresh without opening the browser, run `npm run daily:market-scan` from a scheduler. The command checks market readiness first, skips when the NSE session does not need a new batch, retries transient failures, and records automation runs in `data/automation-runs.json`. For a continuously running local process, use `npm run daily:market-scan:loop`; set `MARKET_REFRESH_INTERVAL_HOURS=5` for a five-hour interval and `MARKET_REFRESH_URL` when targeting a hosted app.
 - The dashboard shortlist and stock workspace now also auto-sync **current market prices** on a short interval for the symbols on screen, while the **suggested/entry price stays fixed** from the saved recommendation batch so you can track move-versus-suggestion cleanly.
 - The live dashboard now keeps **tradable recommendations** separate from the **watchlist**, and the batch publisher no longer forces a minimum number of live calls on weak-signal days.
 - If a live fundamentals or headline source fails, the loader now reuses the **last successful cached stock-level research snapshot** for that symbol whenever one exists instead of dropping the lens immediately.
@@ -71,6 +72,19 @@ data/           Shared sample recommendation data used during scaffolding
 - On the first run it installs npm dependencies automatically.
 - It starts the dashboard server in a new window, waits for `http://localhost:3000`, and opens your browser automatically.
 - The run card in the app shows whether the current batch is coming from **LIVE**, **CACHED**, or **SAMPLE** data.
+
+## Unattended daily automation
+
+The scheduler command targets `http://localhost:3000/api/refresh-market-data` by default, so the Next.js app must be running locally or deployed somewhere. If nothing is running, there is no server process available to scan the market.
+
+- One-shot scheduled run: `npm run daily:market-scan`
+- Continuous local interval loop: `npm run daily:market-scan:loop`
+- Force a refresh even when readiness says to skip: `node scripts/refresh-market-data.mjs --force`
+- Target a hosted dashboard: set `MARKET_REFRESH_URL=https://your-app.example.com/api/refresh-market-data`
+- Use a five-hour interval loop: set `MARKET_REFRESH_INTERVAL_HOURS=5`
+- Tune retries: set `MARKET_REFRESH_RETRIES=2` and `MARKET_REFRESH_RETRY_DELAY_MS=15000`
+
+For Windows Task Scheduler, create a task with `npm` as the program, `run daily:market-scan` as the arguments, and `C:\copilot` as the start-in folder. Use a daily trigger near NSE market open or a repeating trigger every five hours. For a hosted deployment, configure the host's cron/scheduler to call the same command with `MARKET_REFRESH_URL` pointed at the deployed app.
 
 ## Analytics test command
 

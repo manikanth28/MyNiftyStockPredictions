@@ -12,6 +12,7 @@ import {
   isRecommendedPlan
 } from "@/components/market-ui";
 import {
+  buildBacktestEvaluation,
   buildDailyPerformance,
   buildPerformanceSummary,
   outcomeClass,
@@ -474,6 +475,15 @@ export function HistoryDashboard({ data }: HistoryDashboardProps) {
     () => buildPerformanceSummary(dailyPerformance),
     [dailyPerformance]
   );
+  const backtestEvaluation = useMemo(() => buildBacktestEvaluation(data), [data]);
+  const horizonBacktest =
+    backtestEvaluation.horizons.find((item) => item.horizon === activeHorizon) ??
+    backtestEvaluation.horizons[0] ??
+    null;
+  const bestCalibrationBucket =
+    horizonBacktest?.confidenceCalibration
+      .filter((bucket) => bucket.hitRate !== null)
+      .sort((left, right) => (right.hitRate ?? 0) - (left.hitRate ?? 0))[0] ?? null;
 
   const sortedPerformance = useMemo(
     () => sortRows(dailyPerformance, sortKey, sortDirection),
@@ -706,40 +716,44 @@ export function HistoryDashboard({ data }: HistoryDashboardProps) {
 
       <section className="archive-comparison-strip">
         <article className="card archive-comparison-card">
-          <span className="archive-kicker">Best performing setups</span>
+          <span className="archive-kicker">Horizon backtest</span>
           <h2>
-            {comparativeSignals.best
-              ? `${comparativeSignals.best.label} signals are leading`
-              : "Best setup band is still forming"}
+            {horizonBacktest
+              ? `${horizonBacktest.label}: ${formatPercent(horizonBacktest.hitRate)} hit rate`
+              : "Backtest is still forming"}
           </h2>
           <p>
-            {comparativeSignals.best
-              ? `${comparativeSignals.best.successRate?.toFixed(1)}% success across ${comparativeSignals.best.total} closed calls in the selected range.`
-              : "More closed outcomes are needed before a best-performing signal group becomes reliable."}
+            {horizonBacktest
+              ? `${formatNumber(horizonBacktest.closed)} closed of ${formatNumber(horizonBacktest.total)} published calls, ${formatPercent(horizonBacktest.averageReturnPct)} average return, and ${formatPercent(horizonBacktest.maxDrawdownPct)} max drawdown.`
+              : "More closed outcomes are needed before horizon-level backtest stats become reliable."}
           </p>
         </article>
 
         <article className="card archive-comparison-card">
-          <span className="archive-kicker">Worst performing setups</span>
+          <span className="archive-kicker">Benchmark comparison</span>
           <h2>
-            {comparativeSignals.worst
-              ? `${comparativeSignals.worst.label} signals need review`
-              : "Weakest setup band is still forming"}
+            {horizonBacktest?.benchmarkCoverage
+              ? `Alpha ${formatPercent(horizonBacktest.alphaPct)}`
+              : "Benchmark coverage pending"}
           </h2>
           <p>
-            {comparativeSignals.worst
-              ? `${comparativeSignals.worst.successRate?.toFixed(1)}% success across ${comparativeSignals.worst.total} closed calls, which makes it the weakest current pattern.`
-              : "There are not enough closed outcomes yet to identify a consistently weak pattern."}
+            {horizonBacktest?.benchmarkCoverage
+              ? `${formatPercent(horizonBacktest.averageReturnPct)} strategy return versus ${formatPercent(horizonBacktest.benchmarkReturnPct)} ${backtestEvaluation.benchmarkLabel}.`
+              : "Existing sample snapshots predate benchmark-return capture; newly generated historical batches now store benchmark comparison data."}
           </p>
         </article>
 
         <article className="card archive-comparison-card">
-          <span className="archive-kicker">Trust markers</span>
-          <h2>Transparency stays visible</h2>
+          <span className="archive-kicker">Confidence calibration</span>
+          <h2>
+            {bestCalibrationBucket
+              ? `${bestCalibrationBucket.label}: ${formatPercent(bestCalibrationBucket.hitRate)}`
+              : "Calibration pending"}
+          </h2>
           <p>
-            {formatNumber(analyzedTradeCount)} analyzed setups, {formatPercent(historicalAccuracy)}
-            {" "}historical accuracy, and score-versus-outcome context are always shown together so users can
-            judge reliability instead of reading raw logs.
+            {bestCalibrationBucket
+              ? `${formatNumber(bestCalibrationBucket.closed)} closed calls, ${formatPercent(bestCalibrationBucket.averageReturnPct)} average return, and ${bestCalibrationBucket.averageScore?.toFixed(1) ?? "n/a"} average score in the strongest confidence bucket.`
+              : "More closed outcomes are needed before score buckets can be calibrated reliably."}
           </p>
         </article>
       </section>

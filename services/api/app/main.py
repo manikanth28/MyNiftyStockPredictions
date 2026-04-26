@@ -4,7 +4,7 @@ from typing import Any
 
 from fastapi import FastAPI, HTTPException
 
-from .analytics import build_daily_performance, build_stock_history
+from .analytics import build_backtest_evaluation, build_daily_performance, build_stock_history
 from .schemas import (
     HorizonId,
     RecommendationDataset,
@@ -196,6 +196,14 @@ def get_daily_performance(horizon: HorizonId = "swing") -> dict[str, object]:
         "selectedHorizon": horizon,
         "performance": [row.model_dump() for row in performance],
     }
+
+
+@app.get("/api/v1/performance/backtest")
+def get_backtest_evaluation() -> dict[str, object]:
+    dataset = load_dataset()
+    evaluation = build_backtest_evaluation(dataset)
+
+    return evaluation.model_dump()
 
 
 @app.get("/api/v1/recommendations/{symbol}")

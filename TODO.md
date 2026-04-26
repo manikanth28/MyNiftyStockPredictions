@@ -6,27 +6,19 @@ This file captures the todos discussed so far and mirrors the current tracked to
 
 | Status | Count |
 | --- | ---: |
-| In progress | 4 |
-| Pending | 7 |
+| In progress | 0 |
+| Pending | 2 |
 | Blocked | 12 |
-| Done | 32 |
+| Done | 41 |
 
 ## In progress
 
-- **Backtesting and evaluation** (`backtesting-and-evaluation`) - Archive outcomes, daily success-rate views, basic historical outcome tracking, and archive-vs-live comparison are present. Still missing multi-day hit rate, average return, max drawdown, horizon-wise performance, benchmark comparison, and confidence calibration.
-- **Data and news pipeline** (`data-and-news-pipeline`) - Google News sentiment, earnings and analyst classification, NSE announcement merge path, research-source status, cached NSE session reuse, request timeouts, and moderate research concurrency are present. Still missing stronger live coverage, MoneyControl decisioning, better stock and sector tagging, and better relevance ranking.
-- **QA and testing** (`qa-and-testing`) - IDE diagnostics are clean on touched files. Broader regression and runtime coverage are still needed for sorting, live-price overlays, refresh flows, and stricter recommendation gating after more observed batches.
-- **Research console UI** (`research-console-ui`) - Redesigned dashboard, search, archive, stronger stock detail workspace, tradable-vs-waiting separation, fixed suggested price, live current-price overlay, move split, and sortable live tables are present. Still missing richer filters, top gainers/losers views, final sector cleanup, and more UI polish.
+No active in-progress items remain.
 
 ## Pending
 
 - **API and monitoring** (`api-and-monitoring`) - Health check, cached fallback, source visibility, research coverage visibility, and refresh endpoint/basic error handling are present. Still missing structured logs, centralized source success/failure tracking, freshness checks, retry handling, and a simple monitoring view. Depends on: `data-and-news-pipeline`.
-- **Daily automation** (`daily-automation`) - Live/cached generation, daily batch persistence, and manual refresh exist. Still missing scheduled EOD runs, market-calendar-aware execution, retries, run tracking, and end-to-end automation. Depends on: `data-and-news-pipeline`.
-- **Suggest checkbox defaults** (`portfolio-checkbox-guidance`) - Add deterministic guidance for target and stop-loss auto-sell checkbox defaults based on confidence, score strength, and risk/reward. Depends on: `portfolio-wallet-model`.
-- **Add portfolio trade actions** (`portfolio-trade-actions`) - Add buy flows from recommendation surfaces with quantity, source batch, horizon, saved entry/target/stop, two buy-time checkboxes, model-guided suggestions, and manual sell controls. Depends on: `portfolio-checkbox-guidance`, `portfolio-wallet-model`.
-- **Reconcile wallet outcomes** (`portfolio-wallet-evaluator`) - Connect paper trades to archived outcomes and live price overlays so target-hit, stop-loss-hit, and manual-sell events update realized P&L and return cash correctly. Depends on: `portfolio-wallet-model`.
-- **Create paper wallet model** (`portfolio-wallet-model`) - Add a limited-cash browser-persisted wallet with settings, cash balance, ledger, open lots, closed trades, checkbox selections, and derived portfolio metrics.
-- **Build portfolio page** (`portfolio-wallet-page`) - Add `/portfolio` and navigation with starting cash, available cash, invested value, total equity, realized/unrealized P&L, open positions, closed trades, and month-scale performance review. Depends on: `portfolio-trade-actions`, `portfolio-wallet-evaluator`, `portfolio-wallet-model`.
+- **Reconcile wallet outcomes** (`portfolio-wallet-evaluator`) - Basic live-price target/stop auto-exits and manual sells are present in the browser wallet. Still missing deeper reconciliation against archived recommendation outcomes, partial exits, and month-scale performance review. Depends on: `portfolio-wallet-model`.
 
 ## Blocked
 
@@ -51,15 +43,20 @@ This file captures the todos discussed so far and mirrors the current tracked to
 - **Add single-day horizon** (`add-single-day-horizon`) - Added a single-day recommendation horizon across model, dashboard, search, fallback normalization, history, and API compatibility.
 - **Add stock search analyzer** (`add-stock-search`) - Added a symbol search flow that analyzes an NSE stock with the live model.
 - **Add stop-loss learning** (`add-stop-loss-learning`) - Added stop-loss-hit reasoning and model aggressiveness reduction based on recent stop-loss feedback.
+- **Add portfolio trade actions** (`portfolio-trade-actions`) - Added in-place dashboard and stock-detail buy modals with balances, quantity, source batch, horizon, saved entry/target/stop, target/stop checkbox selections, plus portfolio manual sell controls.
 - **Align stock detail panels** (`align-stock-detail-panels`) - Reworked the stock detail page into aligned analysis rows.
 - **Audit feature coverage** (`audit-feature-coverage`) - Reviewed the current system against the requested checklist and identified present, partial, and missing pieces.
 - **Build research features** (`build-features`) - Built reusable momentum, valuation, quality, volatility, liquidity, and regime features.
 - **Build operator dashboard** (`build-operator-ui`) - Created a lightweight research dashboard with ranked recommendations and stock detail view.
+- **Backtesting and evaluation** (`backtesting-and-evaluation`) - Added consolidated multi-horizon evaluation with hit rate, average return, max drawdown, average holding days, optional benchmark comparison/alpha, confidence calibration buckets, a FastAPI endpoint, and archive UI surfacing.
+- **Build portfolio page** (`portfolio-wallet-page`) - Added `/portfolio` with navigation, persistent header portfolio-value summary, starting cash reset, available cash, invested/current value, total equity, realized/unrealized P&L, open positions, closed trades, and recommendation ticket workflow.
 - **Build trade plan engine** (`build-trade-plan-engine`) - Added transparent entry, target, and stop-loss generation across supported horizons.
 - **Choose technical stack** (`choose-stack`) - Selected the architecture, storage, orchestration, model-serving pattern, and deployment target.
 - **Define product scope** (`define-scope`) - Defined target user, market scope, recommendation-batch contents, and supported horizons.
 - **Design data model** (`design-data-model`) - Defined source adapters, schemas, identifier normalization, snapshots, and feature contracts.
 - **Design horizon strategy profiles** (`design-horizon-profiles`) - Defined swing, position, and long-term profiles and the later intraday path.
+- **Data and news pipeline** (`data-and-news-pipeline`) - Completed the v1 news pipeline with NSE announcements first, Google News fallback, tagged/relevance-ranked headlines, sector tags, source coverage tracking, cached fallback status, explicit MoneyControl-disabled-until-approved decisioning, and NSE options/futures derivatives snapshots for puts, PCR, and futures short/long build-up.
+- **Daily automation** (`daily-automation`) - Added market-session readiness checks, manual/auto/scheduler trigger tracking, persistent run logs in `data/automation-runs.json`, scheduler-safe retries, one-shot and five-hour loop commands, and dated daily archive persistence. External Task Scheduler or hosted cron setup remains an operator deployment step.
 - **Enhance stock table** (`enhance-stock-table`) - Added explicit symbol and current market price columns to the dashboard table.
 - **Expand chart analysis** (`expand-chart-analysis`) - Added cause-and-effect explainability, score-to-reasoning navigation, and hover guidance across analysis panels.
 - **Expand live coverage** (`expand-live-coverage`) - Expanded the live watchlist beyond the original ten names and surfaced a broader shortlist.
@@ -68,9 +65,13 @@ This file captures the todos discussed so far and mirrors the current tracked to
 - **Improve Windows launcher** (`improve-launcher`) - Updated `run-app.bat` to install dependencies if needed, start the server, wait for localhost, and open the browser.
 - **Polish dashboard UI** (`polish-dashboard-ui`) - Redesigned the dashboard into a clearer card-based layout with better sectioning and scrolling behavior.
 - **Prepare free hosting** (`prepare-free-hosting`) - Reduced filesystem dependence, added a health endpoint, added Render config, and documented free hosting options.
+- **Create paper wallet model** (`portfolio-wallet-model`) - Added a limited-cash browser-persisted paper wallet with settings, cash balance, ledger, open positions, closed trades, checkbox selections, and derived metrics.
+- **Suggest checkbox defaults** (`portfolio-checkbox-guidance`) - Added deterministic target and stop-loss auto-sell checkbox defaults based on confidence, score strength, risk/reward, and horizon thresholds.
+- **QA and testing** (`qa-and-testing`) - Added API regression coverage for backtest evaluation, confidence calibration, benchmark-return handling, and the new backtest endpoint; added a web typecheck script and verified the current UI/API TypeScript surface.
 - **Redesign archive dashboard** (`redesign-archive-dashboard`) - Turned the archive workspace into a purpose-first dashboard with KPIs, filters, and connected details.
 - **Redesign stock detail UX** (`redesign-stock-detail-ux`) - Replaced the old stock detail page with a compact decision-first layout.
 - **Reorganize dashboard pages** (`reorganize-dashboard-pages`) - Split the unstable single page into dedicated home, history, and stock workspace routes.
+- **Research console UI** (`research-console-ui`) - Completed the v1 research console pass with full-universe table filtering by sector, sentiment, score, and growth; explicit top gainers/losers views; sortable live recommendation/watchlist tables; and archive backtest/benchmark/calibration cards.
 - **Retune dashboard colors** (`retune-dashboard-colors`) - Refined the light theme hierarchy and header surface styling.
 - **Separate dashboard watchlist** (`separate-dashboard-watchlist`) - Kept below-threshold names out of the main recommendation list and showed them in a separate section.
 - **Train baseline ranking model** (`train-baseline-model`) - Implemented the first ranking and scoring pipeline for return, downside risk, and confidence.

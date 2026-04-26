@@ -1,0 +1,146 @@
+const DEFAULT_REFRESH_URL = "http://localhost:3000/api/refresh-market-data";
+const refreshUrl = process.env.MARKET_REFRESH_URL || DEFAULT_REFRESH_URL;
+const intervalHours = Number.parseFloat(process.env.MARKET_REFRESH_INTERVAL_HOURS || "5");
+const retryCount = parsePositiveInteger(process.env.MARKET_REFRESH_RETRIES, 2);
+const retryDelayMs = parsePositiveInteger(process.env.MARKET_REFRESH_RETRY_DELAY_MS, 15000);
+const args = new Set(process.argv.slice(2));
+const loop = args.has("--loop");
+const force = args.has("--force");
+
+function parsePositiveInteger(value, fallback) {
+  const parsed = Number.parseInt(value ?? "", 10);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function readJson(response) {
+  return response.json().catch(() => ({}));
+}
+
+async function readStatus() {
+  const startedAt = new Date().toISOString();
+  console.log(`[market-scan] ${startedAt} GET ${refreshUrl}`);
+
+  const response = await fetch(refreshUrl, {
+    method: "GET",
+    headers: {
+      Accept: "application/json"
+    }
+  });
+  const payload = await readJson(response);
+
+  if (!response.ok) {
+    throw new Error(payload.error || payload.message || `Readiness check failed with HTTP ${response.status}.`);
+  }
+
+  return payload;
+}
+
+function logReadinessSkip(status) {
+  const readiness = status.readiness ?? {};
+  console.log(
+    `[market-scan] skipped expected=${readiness.expectedBatchDate ?? "unknown"} latest=${readiness.latestBatchDate ?? "none"} reason=${readiness.detail ?? "refresh not required"}`
+  );
+}
+
+async function postRefresh() {
+  const startedAt = new Date().toISOString();
+  console.log(`[market-scan] ${startedAt} POST ${refreshUrl}${force ? " --force" : ""}`);
+
+  const response = await fetch(refreshUrl, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json"
+    },
+    body: JSON.stringify({
+      scope: "all",
+      trigger: "scheduler",
+      force
+    })
+  });
+  const payload = await readJson(response);
+
+  if (payload.skipped) {
+    console.log(`[market-scan] skipped reason=${payload.message || "refresh not required"}`);
+    return payload;
+  }
+
+  if (!response.ok || payload.refreshed === false) {
+    throw new Error(payload.error || payload.message || `Refresh failed with HTTP ${response.status}.`);
+  }
+
+  console.log(
+    `[market-scan] refreshed batch=${payload.batchDate || "unknown"} generatedAt=${payload.generatedAt || "unknown"}`
+  );
+
+  return payload;
+}
+
+async function refreshOnce() {
+  let status = null;
+
+  try {
+    status = await readStatus();
+  } catch (error) {
+    console.warn(`[market-scan] readiness check unavailable: ${error instanceof Error ? error.message : String(error)}`);
+  }
+
+  if (!force && status?.readiness && !status.readiness.shouldRefresh) {
+    logReadinessSkip(status);
+  }
+
+  return postRefresh();
+}
+
+async function refreshWithRetries() {
+  for (let attempt = 0; attempt <= retryCount; attempt += 1) {
+    try {
+      return await refreshOnce();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+
+      if (attempt >= retryCount) {
+        throw error;
+      }
+
+      console.error(`[market-scan] attempt ${attempt + 1} failed: ${message}`);
+      console.log(`[market-scan] retrying in ${Math.round(retryDelayMs / 1000)} second(s)`);
+      await sleep(retryDelayMs);
+    }
+  }
+
+  return null;
+}
+
+async function main() {
+  if (!loop) {
+    await refreshWithRetries();
+    return;
+  }
+
+  if (!Number.isFinite(intervalHours) || intervalHours <= 0) {
+    throw new Error("MARKET_REFRESH_INTERVAL_HOURS must be a positive number when using --loop.");
+  }
+
+  const intervalMs = intervalHours * 60 * 60 * 1000;
+
+  while (true) {
+    try {
+      await refreshWithRetries();
+    } catch (error) {
+      console.error(`[market-scan] ${error instanceof Error ? error.message : String(error)}`);
+    }
+
+    console.log(`[market-scan] sleeping ${intervalHours} hour(s)`);
+    await sleep(intervalMs);
+  }
+}
+
+main().catch((error) => {
+  console.error(`[market-scan] ${error instanceof Error ? error.message : String(error)}`);
+  process.exitCode = 1;
+});

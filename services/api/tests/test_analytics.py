@@ -4,7 +4,7 @@ from unittest.mock import patch
 from fastapi import HTTPException
 
 from app import main as api_main
-from app.analytics import build_daily_performance, build_stock_history
+from app.analytics import build_backtest_evaluation, build_daily_performance, build_stock_history
 from app.main import load_dataset
 from app.schemas import FundamentalSnapshot, ResearchSourceStatus, StockResearchStatus
 
@@ -51,6 +51,32 @@ class RecommendationAnalyticsTests(unittest.TestCase):
             ["2026-04-14", "2026-04-11", "2026-04-10"],
         )
         self.assertTrue(all(entry.symbol == "RELIANCE" for entry in history))
+
+    def test_backtest_evaluation_summarizes_horizon_metrics(self) -> None:
+        evaluation = build_backtest_evaluation(self.dataset)
+        swing = next(row for row in evaluation.horizons if row.horizon == "swing")
+
+        self.assertEqual(evaluation.batchCount, len(self.dataset.history))
+        self.assertEqual(swing.total, 9)
+        self.assertEqual(swing.closed, 9)
+        self.assertEqual(swing.open, 0)
+        self.assertAlmostEqual(swing.hitRate or 0, 66.67, places=2)
+        self.assertIsNotNone(swing.averageReturnPct)
+        self.assertIsNotNone(swing.maxDrawdownPct)
+        self.assertGreaterEqual(len(swing.confidenceCalibration), 1)
+
+    def test_backtest_evaluation_uses_optional_benchmark_returns(self) -> None:
+        dataset = self.dataset.model_copy(deep=True)
+        for batch in dataset.history:
+            for recommendation in batch.recommendations:
+                recommendation.profiles["swing"].outcome.benchmarkReturnPct = 1.0
+
+        evaluation = build_backtest_evaluation(dataset)
+        swing = next(row for row in evaluation.horizons if row.horizon == "swing")
+
+        self.assertEqual(swing.benchmarkCoverage, swing.closed)
+        self.assertAlmostEqual(swing.benchmarkReturnPct or 0, 1.0, places=2)
+        self.assertIsNotNone(swing.alphaPct)
 
     def test_dataset_normalization_adds_single_day_profile(self) -> None:
         self.assertIn("single_day", self.dataset.currentBatch.recommendations[0].profiles)
@@ -148,6 +174,17 @@ class RecommendationApiTests(unittest.TestCase):
         self.assertEqual(latest["failed"], 1)
         self.assertEqual(latest["open"], 1)
         self.assertAlmostEqual(latest["successRate"] or 0, 50.0, places=2)
+
+    def test_backtest_endpoint_returns_horizon_evaluation(self) -> None:
+        with patch.object(api_main, "load_dataset", return_value=self.dataset):
+            payload = api_main.get_backtest_evaluation()
+
+        self.assertEqual(payload["batchCount"], len(self.dataset.history))
+        self.assertGreater(len(payload["horizons"]), 0)
+        swing = next(row for row in payload["horizons"] if row["horizon"] == "swing")
+        self.assertIn("hitRate", swing)
+        self.assertIn("maxDrawdownPct", swing)
+        self.assertIn("confidenceCalibration", swing)
 
     def test_stock_detail_endpoint_returns_history_and_profiles(self) -> None:
         with patch.object(api_main, "load_dataset", return_value=self.dataset):

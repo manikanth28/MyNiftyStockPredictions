@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 import { MarketRefreshButton } from "@/components/market-refresh-button";
+import { WalletSummaryPill } from "@/components/wallet-summary-pill";
 
 const NAV_ITEMS = [
   {
@@ -13,6 +14,10 @@ const NAV_ITEMS = [
   {
     href: "/history",
     label: "Archive"
+  },
+  {
+    href: "/portfolio",
+    label: "Portfolio"
   }
 ];
 
@@ -47,6 +52,8 @@ export function AppShell({ children }: { children: ReactNode }) {
                 );
               })}
             </nav>
+
+            <WalletSummaryPill />
 
             <MarketRefreshButton
               buttonClassName="app-shell-refresh-button"

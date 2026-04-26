@@ -16,6 +16,7 @@ import {
   priceMoveMeta
 } from "@/components/market-ui";
 import { useLatestPriceOverlay } from "@/components/use-latest-price-overlay";
+import { WalletBuyModal } from "@/components/wallet-buy-modal";
 import type {
   AnalysisDriver,
   HorizonId,
@@ -380,6 +381,7 @@ export function StockDetail({ data, analysis, requestedSymbol }: StockDetailProp
   const riskPerTradePct = Math.abs(((selectedPlan.entryPrice - selectedPlan.stopLoss) / selectedPlan.entryPrice) * 100);
   const activeProfileLabel = activeProfile?.label ?? "Selected";
   const thresholdLabel = `Threshold ${scoreMeta.threshold}`;
+  const portfolioHref = "/portfolio";
 
   const technicalDrivers = reasoningDriversFor(selectedPlan, "technical");
   const fundamentalDrivers = reasoningDriversFor(selectedPlan, "fundamental");
@@ -529,9 +531,8 @@ export function StockDetail({ data, analysis, requestedSymbol }: StockDetailProp
   const primaryAction =
     decision.state === "buy"
       ? {
-          kind: "link" as const,
-          label: "Execute Trade",
-          href: "#trade-plan"
+          kind: "wallet" as const,
+          label: "Execute Trade"
         }
       : decision.state === "watch"
         ? {
@@ -556,6 +557,9 @@ export function StockDetail({ data, analysis, requestedSymbol }: StockDetailProp
                 </Link>
                 <Link className="secondary-link" href="/history">
                   Archive
+                </Link>
+                <Link className="secondary-link" href={portfolioHref}>
+                  Portfolio
                 </Link>
               </div>
             </div>
@@ -601,7 +605,19 @@ export function StockDetail({ data, analysis, requestedSymbol }: StockDetailProp
               </div>
 
               <div className="trade-command-actions">
-                {primaryAction.kind === "link" ? (
+                {primaryAction.kind === "wallet" ? (
+                  <WalletBuyModal
+                    stock={stock}
+                    plan={selectedPlan}
+                    horizon={activeHorizon}
+                    sourceBatchDate={data.currentBatch.batchDate}
+                    sourceGeneratedAt={data.currentBatch.generatedAt}
+                    currentPrice={liveCurrentPrice}
+                    triggerClassName={`trade-primary-action ${decision.tone}`}
+                    triggerLabel={primaryAction.label}
+                    triggerTitle="Buy in paper wallet"
+                  />
+                ) : primaryAction.kind === "link" ? (
                   <a className={`trade-primary-action ${decision.tone}`} href={primaryAction.href}>
                     {primaryAction.label}
                   </a>
@@ -1126,9 +1142,17 @@ export function StockDetail({ data, analysis, requestedSymbol }: StockDetailProp
 
             <div className="trade-summary-actions">
               {decision.state === "buy" ? (
-                <a className={`trade-primary-action ${decision.tone}`} href="#trade-plan">
-                  Execute Trade
-                </a>
+                <WalletBuyModal
+                  stock={stock}
+                  plan={selectedPlan}
+                  horizon={activeHorizon}
+                  sourceBatchDate={data.currentBatch.batchDate}
+                  sourceGeneratedAt={data.currentBatch.generatedAt}
+                  currentPrice={liveCurrentPrice}
+                  triggerClassName={`trade-primary-action ${decision.tone}`}
+                  triggerLabel="Execute Trade"
+                  triggerTitle="Buy in paper wallet"
+                />
               ) : decision.state === "watch" ? (
                 <button
                   className={`trade-primary-action ${decision.tone}`}

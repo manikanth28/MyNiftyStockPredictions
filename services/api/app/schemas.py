@@ -78,16 +78,37 @@ class ResearchSourceStatus(BaseModel):
     itemCount: int | None = None
 
 
+class DerivativesSnapshot(BaseModel):
+    source: str
+    observedAt: str
+    underlyingValue: float | None = None
+    putCallRatio: float | None = None
+    nearestExpiry: str | None = None
+    putOpenInterest: float | None = None
+    putChangeInOpenInterest: float | None = None
+    callOpenInterest: float | None = None
+    callChangeInOpenInterest: float | None = None
+    maxPutOiStrike: float | None = None
+    maxCallOiStrike: float | None = None
+    futuresOpenInterest: float | None = None
+    futuresChangeInOpenInterest: float | None = None
+    futuresPriceChangePct: float | None = None
+    shortBuildUp: bool = False
+    longBuildUp: bool = False
+    summary: str
+
+
 class StockResearchStatus(BaseModel):
     fundamentals: ResearchSourceStatus
     sentiment: ResearchSourceStatus
-
+    derivatives: ResearchSourceStatus | None = None
 
 class RecommendationOutcome(BaseModel):
     result: OutcomeResult
     evaluatedOn: str
     holdingDays: int
     returnPct: float
+    benchmarkReturnPct: float | None = None
     notes: str
 
 
@@ -136,6 +157,7 @@ class StockAnalysis(BaseModel):
     latestSessionChangePct: float | None = None
     fundamentals: FundamentalSnapshot | None = None
     sentiment: SentimentSnapshot | None = None
+    derivatives: DerivativesSnapshot | None = None
     researchStatus: StockResearchStatus | None = None
     profiles: dict[HorizonId, RecommendationPlan]
 
@@ -203,6 +225,38 @@ class DailyPerformance(BaseModel):
     failed: int
     successRate: float | None
     averageReturnPct: float | None
+
+
+class ConfidenceCalibrationBucket(BaseModel):
+    label: str
+    total: int
+    closed: int
+    averageScore: float | None
+    hitRate: float | None
+    averageReturnPct: float | None
+
+
+class HorizonBacktestSummary(BaseModel):
+    horizon: HorizonId
+    label: str
+    total: int
+    closed: int
+    open: int
+    hitRate: float | None
+    averageReturnPct: float | None
+    maxDrawdownPct: float | None
+    averageHoldingDays: float | None
+    benchmarkReturnPct: float | None
+    benchmarkCoverage: int
+    alphaPct: float | None
+    confidenceCalibration: list[ConfidenceCalibrationBucket]
+
+
+class BacktestEvaluation(BaseModel):
+    generatedAt: str
+    batchCount: int
+    benchmarkLabel: str
+    horizons: list[HorizonBacktestSummary]
 
 
 class StockPerformanceHistoryEntry(BaseModel):
