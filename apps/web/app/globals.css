@@ -5087,3 +5087,22 @@ h3 {
     display: grid;
   }
 }
+.dashboard-refresh-cta {
+  margin-left: 8px;
+}
+.dashboard-refresh-message {
+  margin-top: 8px;
+  font-size: 12px;
+}
+
+.dashboard-refresh-message.loading {
+  color: var(--muted);
+}
+
+.dashboard-refresh-message.success {
+  color: var(--success);
+}
+
+.dashboard-refresh-message.error {
+  color: var(--danger);
+}

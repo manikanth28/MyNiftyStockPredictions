@@ -73,13 +73,22 @@ type Candidate = {
 };
 
 const REPORT_DIRECTORY_NAME = "trading-reports";
-const MAX_NEW_BUYS_PER_DAY = 3;
-const CASH_RESERVE_PCT = 20;
-const MAX_STOCK_ALLOCATION_PCT = 10;
-const MAX_SECTOR_ALLOCATION_PCT = 30;
 const ENTRY_DRIFT_LIMIT_PCT = 1.5;
+const EXECUTION_SLIPPAGE_PCT = 0.08;
 const MODEL_SCORE_DROP_EXIT = 12;
 const MIN_MODEL_RISK_REWARD = 1.1;
+const BOT_MIN_SCORE: Record<HorizonId, number> = {
+  single_day: 68,
+  swing: 66,
+  position: 64,
+  long_term: 62
+};
+const BOT_MIN_RISK_REWARD: Record<HorizonId, number> = {
+  single_day: 1.7,
+  swing: 2.0,
+  position: 1.9,
+  long_term: 1.8
+};
 const MARKET_TIME_ZONE = "Asia/Kolkata";
 const MARKET_OPEN_HOUR = 9;
 const MARKET_OPEN_MINUTE = 15;
@@ -212,8 +221,17 @@ function recommendedCandidates(dataset: RecommendationDataset) {
         continue;
       }
 
-      const score = plan.score ?? plan.expectedReturnPct;
-      const rankScore = score + plan.riskReward * 4 + HORIZON_PRIORITY[profile.id] * 2;
+      const minScore = BOT_MIN_SCORE[profile.id];
+      const minRiskReward = BOT_MIN_RISK_REWARD[profile.id];
+      const planScore = plan.score ?? plan.expectedReturnPct;
+      const convictionOk = plan.conviction === "High" || (plan.conviction === "Medium" && profile.id !== "single_day");
+
+      if (!convictionOk || planScore < minScore || plan.riskReward < minRiskReward) {
+        continue;
+      }
+
+      const score = planScore;
+      const rankScore = score + plan.riskReward * 6 + HORIZON_PRIORITY[profile.id] * 2;
       const existing = bestBySymbol.get(normalizeSymbol(stock.symbol));
 
       if (!existing || rankScore > existing.rankScore) {
@@ -230,14 +248,25 @@ function recommendedCandidates(dataset: RecommendationDataset) {
   return [...bestBySymbol.values()].sort((left, right) => right.rankScore - left.rankScore);
 }
 
-function buysToday(wallet: PortfolioWallet, reportDate: string) {
-  return wallet.ledger.filter((entry) => entry.type === "buy" && entry.occurredAt.startsWith(reportDate)).length;
+function adjustedExecutionPrice(price: number, side: "buy" | "sell") {
+  if (!Number.isFinite(price) || price <= 0) {
+    return price;
+  }
+
+  const multiplier = side === "buy" ? 1 + EXECUTION_SLIPPAGE_PCT / 100 : 1 - EXECUTION_SLIPPAGE_PCT / 100;
+  return roundMoney(price * multiplier);
 }
 
-function sectorExposure(wallet: PortfolioWallet, currentPrices: Record<string, number>, sector: string) {
-  return wallet.openPositions
-    .filter((position) => position.sector === sector)
-    .reduce((sum, position) => sum + position.quantity * (currentPrices[position.symbol] ?? position.entryPrice), 0);
+function executionAlignedPlan(plan: RecommendationPlan, filledEntry: number): RecommendationPlan {
+  const targetPct = Math.max(0, (plan.targetPrice - plan.entryPrice) / Math.max(plan.entryPrice, 0.01));
+  const stopPct = Math.max(0, (plan.entryPrice - plan.stopLoss) / Math.max(plan.entryPrice, 0.01));
+
+  return {
+    ...plan,
+    entryPrice: filledEntry,
+    targetPrice: roundMoney(filledEntry * (1 + targetPct)),
+    stopLoss: roundMoney(filledEntry * (1 - stopPct))
+  };
 }
 
 async function runSellDecisions(
@@ -250,6 +279,7 @@ async function runSellDecisions(
 
   for (const position of wallet.openPositions) {
     const ltp = prices[position.symbol]?.currentMarketPrice ?? position.entryPrice;
+    const executableSellPrice = adjustedExecutionPrice(ltp, "sell");
     let exitReason: WalletTradeExitReason | null = null;
     let exitNote = "";
 
@@ -273,14 +303,14 @@ async function runSellDecisions(
       continue;
     }
 
-    nextWallet = await sellSharedWalletPosition(position.id, ltp, exitReason, {
+    nextWallet = await sellSharedWalletPosition(position.id, executableSellPrice, exitReason, {
       exitNote
     });
     actions.push(action("sell", exitNote, {
       symbol: position.symbol,
       quantity: position.quantity,
-      price: ltp,
-      amount: roundMoney(position.quantity * ltp),
+      price: executableSellPrice,
+      amount: roundMoney(position.quantity * executableSellPrice),
       horizon: position.horizon
     }));
   }
@@ -292,33 +322,13 @@ async function runBuyDecisions(
   wallet: PortfolioWallet,
   dataset: RecommendationDataset,
   prices: Record<string, { currentMarketPrice: number }>,
-  reportDate: string,
   actions: PortfolioBotAction[]
 ) {
   let nextWallet = wallet;
   const openSymbols = new Set(wallet.openPositions.map((position) => normalizeSymbol(position.symbol)));
-  const currentPrices = Object.fromEntries(
-    wallet.openPositions.map((position) => [
-      position.symbol,
-      prices[position.symbol]?.currentMarketPrice ?? position.entryPrice
-    ])
-  );
-  const metrics = calculateWalletMetrics(wallet, currentPrices);
-  const reserveAmount = metrics.totalEquity * (CASH_RESERVE_PCT / 100);
-  const maxPositionAmount = metrics.totalEquity * (MAX_STOCK_ALLOCATION_PCT / 100);
-  const maxSectorAmount = metrics.totalEquity * (MAX_SECTOR_ALLOCATION_PCT / 100);
-  let remainingBuySlots = Math.max(0, MAX_NEW_BUYS_PER_DAY - buysToday(wallet, reportDate));
-
-  if (remainingBuySlots <= 0) {
-    actions.push(action("skip", "Daily new-buy limit already reached."));
-    return nextWallet;
-  }
-
-  for (const candidate of recommendedCandidates(dataset)) {
-    if (remainingBuySlots <= 0) {
-      break;
-    }
-
+  const candidates = recommendedCandidates(dataset);
+  for (let index = 0; index < candidates.length; index += 1) {
+    const candidate = candidates[index];
     const symbol = normalizeSymbol(candidate.stock.symbol);
 
     if (openSymbols.has(symbol)) {
@@ -327,48 +337,45 @@ async function runBuyDecisions(
     }
 
     const ltp = prices[symbol]?.currentMarketPrice ?? candidate.stock.currentMarketPrice;
+    const executableBuyPrice = adjustedExecutionPrice(ltp, "buy");
 
     if (!Number.isFinite(ltp) || ltp <= 0) {
       actions.push(action("skip", "Skipped because live price was unavailable.", { symbol }));
       continue;
     }
 
-    if (ltp > candidate.plan.entryPrice * (1 + ENTRY_DRIFT_LIMIT_PCT / 100)) {
+    if (executableBuyPrice > candidate.plan.entryPrice * (1 + ENTRY_DRIFT_LIMIT_PCT / 100)) {
       actions.push(action("skip", "Skipped because price moved too far above recommended entry.", {
         symbol,
-        price: ltp,
+        price: executableBuyPrice,
         horizon: candidate.horizon
       }));
       continue;
     }
 
-    if (ltp >= candidate.plan.targetPrice || ltp <= candidate.plan.stopLoss) {
+    if (executableBuyPrice >= candidate.plan.targetPrice || executableBuyPrice <= candidate.plan.stopLoss) {
       actions.push(action("skip", "Skipped because live price is already outside the planned trade band.", {
         symbol,
-        price: ltp,
+        price: executableBuyPrice,
         horizon: candidate.horizon
       }));
       continue;
     }
 
-    const sectorRoom = Math.max(0, maxSectorAmount - sectorExposure(nextWallet, currentPrices, candidate.stock.sector));
-    const availableCashAfterReserve = Math.max(0, nextWallet.cashBalance - reserveAmount);
-    const buyBudget = Math.min(maxPositionAmount, sectorRoom, availableCashAfterReserve);
-    const quantity = Math.floor(buyBudget / ltp);
+    const remainingCandidates = Math.max(1, candidates.length - index);
+    const buyBudget = Math.max(0, nextWallet.cashBalance / remainingCandidates);
+    const quantity = Math.floor(buyBudget / executableBuyPrice);
 
     if (quantity <= 0) {
       actions.push(action("skip", "Skipped because allocation rules left no affordable quantity.", {
         symbol,
-        price: ltp,
+        price: executableBuyPrice,
         horizon: candidate.horizon
       }));
       continue;
     }
 
-    const fillPlan: RecommendationPlan = {
-      ...candidate.plan,
-      entryPrice: roundMoney(ltp)
-    };
+    const fillPlan = executionAlignedPlan(candidate.plan, executableBuyPrice);
 
     nextWallet = await buySharedWalletPosition({
       stock: candidate.stock,
@@ -379,15 +386,14 @@ async function runBuyDecisions(
       sourceGeneratedAt: dataset.currentBatch.generatedAt,
       autoSellAtTarget: true,
       autoSellAtStopLoss: true,
-      notes: `Background bot buy. Allocation: max ${MAX_STOCK_ALLOCATION_PCT}% per stock, ${CASH_RESERVE_PCT}% cash reserve.`
+      notes: "Background bot buy. Uncapped mode: buying all eligible recommendations within available cash."
     });
     openSymbols.add(symbol);
-    remainingBuySlots -= 1;
-    actions.push(action("buy", "Bought recommended setup using disciplined allocation rules.", {
+    actions.push(action("buy", "Bought recommended setup in uncapped buying mode.", {
       symbol,
       quantity,
-      price: ltp,
-      amount: roundMoney(quantity * ltp),
+      price: executableBuyPrice,
+      amount: roundMoney(quantity * executableBuyPrice),
       horizon: candidate.horizon
     }));
   }
@@ -550,7 +556,7 @@ export async function runPortfolioBotTick(options: { writeReport?: boolean } = {
   wallet = await runSellDecisions(wallet, dataset, prices, actions);
 
   if (isMarketSession()) {
-    wallet = await runBuyDecisions(wallet, dataset, prices, marketDateString(), actions);
+    wallet = await runBuyDecisions(wallet, dataset, prices, actions);
   } else {
     actions.push(action("skip", "Buy checks skipped because NSE market session is closed."));
   }

@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import {
   InfoTooltip,
@@ -272,7 +273,7 @@ function sortStocks(
   horizon: HorizonId,
   sortKey: SortKey,
   sortDirection: SortDirection,
-  currentPriceFor: (stock: StockAnalysis) => number,
+  currentPriceFor: (stock: StockAnalysis) => number | null,
   dayStartPriceFor: (stock: StockAnalysis) => number | null
 ) {
   const sortedStocks = [...stocks];
@@ -532,7 +533,7 @@ function SearchResultBanner({
 }) {
   const searchedStock = searchedAnalysis.stock;
   const quickPlan = searchedStock ? searchedStock.profiles[activeHorizon] : null;
-  const liveCurrentPrice = currentPrice ?? searchedStock?.currentMarketPrice ?? null;
+  const liveCurrentPrice = currentPrice ?? null;
   const searchCmpMove =
     liveCurrentPrice !== null ? priceMoveMeta(liveCurrentPrice, dayStartPrice, "day start") : null;
   const searchSuggestionMove =
@@ -569,7 +570,7 @@ function SearchResultBanner({
         {searchedStock ? (
           <div className="dashboard-search-banner-meta">
             <span>{searchedStock.sector}</span>
-            <span>CMP {formatPrice(liveCurrentPrice ?? searchedStock.currentMarketPrice)}</span>
+            <span>CMP {liveCurrentPrice === null ? "n/a" : formatPrice(liveCurrentPrice)}</span>
             {quickPlan ? <span>Suggested at {formatPrice(quickPlan.entryPrice)}</span> : null}
             {searchCmpMove ? (
               <span className={`dashboard-inline-trend ${searchCmpMove.tone}`}>{searchCmpMove.move}</span>
@@ -624,7 +625,7 @@ function StockTableRow({
   activeHorizon: HorizonId;
   profileLabel: string;
   isSelected: boolean;
-  currentPrice: number;
+  currentPrice: number | null;
   dayStartPrice: number | null;
   sourceBatchDate: string;
   sourceGeneratedAt: string;
@@ -699,7 +700,7 @@ function StockTableRow({
 
       <td className="dashboard-stock-cell">
         <div className="dashboard-price-stack dashboard-price-stack-inline">
-          <strong>{formatPrice(currentPrice)}</strong>
+          <strong>{currentPrice === null ? "n/a" : formatPrice(currentPrice)}</strong>
           <span className={`dashboard-inline-trend ${cmpMove.tone}`} title={cmpMove.label}>
             {rowMoveLabel}
           </span>
@@ -773,7 +774,7 @@ function StockTable({
   sortDirection: SortDirection;
   onToggleSort: (sortKey: SortKey) => void;
   selectedSymbol: string | null;
-  currentPriceFor: (stock: StockAnalysis) => number;
+  currentPriceFor: (stock: StockAnalysis) => number | null;
   dayStartPriceFor: (stock: StockAnalysis) => number | null;
   sourceBatchDate: string;
   sourceGeneratedAt: string;
@@ -958,6 +959,8 @@ function TopMoverList({
 }
 
 export function Dashboard({ data, searchedAnalysis, archiveSummary }: DashboardProps) {
+  const REFRESH_STATUS_STORAGE_KEY = "dashboard_refresh_status_v1";
+  const router = useRouter();
   const [activeHorizon, setActiveHorizon] = useState<HorizonId>(data.profiles[0]?.id ?? "single_day");
   const [sortKey, setSortKey] = useState<SortKey>("score");
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
@@ -965,6 +968,51 @@ export function Dashboard({ data, searchedAnalysis, archiveSummary }: DashboardP
   const [sentimentFilter, setSentimentFilter] = useState<SentimentFilter>("all");
   const [scoreFilter, setScoreFilter] = useState<ScoreFilter>("all");
   const [growthFilter, setGrowthFilter] = useState<GrowthFilter>("all");
+  const [isRefreshingRecommendations, setIsRefreshingRecommendations] = useState(false);
+  const [refreshRecommendationsFeedback, setRefreshRecommendationsFeedback] = useState<{
+    tone: "loading" | "success" | "error";
+    text: string;
+  } | null>(null);
+
+  useEffect(() => {
+    try {
+      const raw = window.sessionStorage.getItem(REFRESH_STATUS_STORAGE_KEY);
+
+      if (!raw) {
+        return;
+      }
+
+      const parsed = JSON.parse(raw) as {
+        tone?: "loading" | "success" | "error";
+        text?: string;
+      };
+
+      if (parsed?.tone && parsed?.text) {
+        setRefreshRecommendationsFeedback({
+          tone: parsed.tone,
+          text: parsed.text
+        });
+      }
+    } catch {
+      // Ignore storage read failures.
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      if (!refreshRecommendationsFeedback) {
+        window.sessionStorage.removeItem(REFRESH_STATUS_STORAGE_KEY);
+        return;
+      }
+
+      window.sessionStorage.setItem(
+        REFRESH_STATUS_STORAGE_KEY,
+        JSON.stringify(refreshRecommendationsFeedback)
+      );
+    } catch {
+      // Ignore storage write failures.
+    }
+  }, [refreshRecommendationsFeedback]);
   const toggleSort = (nextSortKey: SortKey) => {
     if (nextSortKey === sortKey) {
       setSortDirection((current) => (current === "asc" ? "desc" : "asc"));
@@ -986,6 +1034,62 @@ export function Dashboard({ data, searchedAnalysis, archiveSummary }: DashboardP
   const sourceProvider = data.dataSource?.provider ?? "Live recommendation loader";
   const watchlistName = compactUniverseLabel(data.universe);
   const liveStatus = liveStatusMeta(data.dataSource?.mode);
+
+  async function handleRefreshRecommendations() {
+    if (isRefreshingRecommendations) {
+      return;
+    }
+
+    setIsRefreshingRecommendations(true);
+    setRefreshRecommendationsFeedback({
+      tone: "loading",
+      text: "Refreshing recommendations..."
+    });
+
+    try {
+      const response = await fetch("/api/refresh-market-data", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json"
+        },
+        body: JSON.stringify({
+          scope: "all",
+          trigger: "manual",
+          force: true
+        })
+      });
+      const payload = (await response.json().catch(() => ({}))) as {
+        message?: string;
+        error?: string;
+        batchDate?: string;
+        generatedAt?: string;
+      };
+
+      if (!response.ok) {
+        throw new Error(payload.error || payload.message || `Refresh failed with HTTP ${response.status}.`);
+      }
+
+      const refreshedAt = new Date().toLocaleTimeString("en-IN");
+      const hasNewSnapshot =
+        payload.batchDate !== data.currentBatch.batchDate ||
+        payload.generatedAt !== data.currentBatch.generatedAt;
+      setRefreshRecommendationsFeedback({
+        tone: "success",
+        text: hasNewSnapshot
+          ? `Refreshed at ${refreshedAt}. New snapshot created. Batch: ${payload.batchDate ?? "n/a"} | Generated: ${payload.generatedAt ?? "n/a"}. Check top rows for new recommendations.`
+          : `Refreshed at ${refreshedAt}, but snapshot is unchanged (same batch/time). No new recommendations were produced in this refresh.`
+      });
+      router.refresh();
+    } catch (error) {
+      setRefreshRecommendationsFeedback({
+        tone: "error",
+        text: error instanceof Error ? error.message : "Unable to refresh recommendations."
+      });
+    } finally {
+      setIsRefreshingRecommendations(false);
+    }
+  }
 
   const localSearchSuggestions = useMemo(
     () =>
@@ -1082,6 +1186,7 @@ export function Dashboard({ data, searchedAnalysis, archiveSummary }: DashboardP
   const overlayEntryFor = (stock: StockAnalysis) => livePriceOverlay[stock.symbol] ?? null;
   const currentPriceFor = (stock: StockAnalysis) =>
     overlayEntryFor(stock)?.currentMarketPrice ?? stock.currentMarketPrice;
+  const liveCurrentPriceFor = (stock: StockAnalysis) => overlayEntryFor(stock)?.currentMarketPrice ?? null;
   const dayStartPriceFor = (stock: StockAnalysis) => overlayEntryFor(stock)?.dayStartPrice ?? null;
   const visibleRecommendations = useMemo(() => {
     return sortStocks(
@@ -1089,7 +1194,7 @@ export function Dashboard({ data, searchedAnalysis, archiveSummary }: DashboardP
       activeHorizon,
       sortKey,
       sortDirection,
-      currentPriceFor,
+      liveCurrentPriceFor,
       dayStartPriceFor
     );
   }, [activeHorizon, livePriceOverlay, sortDirection, sortKey, tradableShortlistRecommendations]);
@@ -1099,7 +1204,7 @@ export function Dashboard({ data, searchedAnalysis, archiveSummary }: DashboardP
       activeHorizon,
       sortKey,
       sortDirection,
-      currentPriceFor,
+      liveCurrentPriceFor,
       dayStartPriceFor
     );
   }, [activeHorizon, livePriceOverlay, sortDirection, sortKey, watchShortlistRecommendations]);
@@ -1121,7 +1226,7 @@ export function Dashboard({ data, searchedAnalysis, archiveSummary }: DashboardP
       setSelectedSymbol(searchedVisible ?? displayedRecommendations[0].symbol);
     }
   }, [displayedRecommendations, searchedAnalysis?.stock?.symbol, selectedSymbol]);
-  const searchedCurrentPrice = searchedAnalysis?.stock ? currentPriceFor(searchedAnalysis.stock) : null;
+  const searchedCurrentPrice = searchedAnalysis?.stock ? liveCurrentPriceFor(searchedAnalysis.stock) : null;
   const searchedDayStartPrice = searchedAnalysis?.stock ? dayStartPriceFor(searchedAnalysis.stock) : null;
 
   const performanceSummary = archiveSummary.byHorizon[activeHorizon];
@@ -1129,7 +1234,7 @@ export function Dashboard({ data, searchedAnalysis, archiveSummary }: DashboardP
   const spotlightStock =
     displayedRecommendations.find((stock) => stock.symbol === selectedSymbol) ?? displayedRecommendations[0];
   const spotlightPlan = spotlightStock?.profiles[activeHorizon];
-  const spotlightCurrentPrice = spotlightStock ? currentPriceFor(spotlightStock) : null;
+  const spotlightCurrentPrice = spotlightStock ? liveCurrentPriceFor(spotlightStock) : null;
   const spotlightDayStartPrice = spotlightStock ? dayStartPriceFor(spotlightStock) : null;
   const spotlightConfidence = spotlightPlan ? confidenceMeta(spotlightPlan, activeHorizon) : null;
   const spotlightSuggestionMove =
@@ -1351,7 +1456,17 @@ export function Dashboard({ data, searchedAnalysis, archiveSummary }: DashboardP
                   <span className="dashboard-mini-label">Tradable recommendations</span>
                   <h3>Only live calls are listed here</h3>
                 </div>
-                <span className="dashboard-table-count">{formatNumber(recommendedCount)} tradable</span>
+                <div className="dashboard-table-subhead-actions">
+                  <span className="dashboard-table-count">{formatNumber(recommendedCount)} tradable</span>
+                  <button
+                    className="dashboard-row-action secondary dashboard-refresh-cta"
+                    disabled={isRefreshingRecommendations}
+                    onClick={handleRefreshRecommendations}
+                    type="button"
+                  >
+                    {isRefreshingRecommendations ? "Refreshing..." : "Refresh recommendations"}
+                  </button>
+                </div>
               </div>
 
               <div className="dashboard-table-card">
@@ -1385,7 +1500,9 @@ export function Dashboard({ data, searchedAnalysis, archiveSummary }: DashboardP
                     <span className="dashboard-mini-label">Needs confirmation</span>
                     <h3>Wait for confirmation before treating these as live calls</h3>
                   </div>
-                  <span className="dashboard-table-count">{formatNumber(watchCount)} waiting</span>
+                  <div className="dashboard-table-subhead-actions">
+                    <span className="dashboard-table-count">{formatNumber(watchCount)} waiting</span>
+                  </div>
                 </div>
 
                 <div className="dashboard-table-card">
@@ -1407,6 +1524,11 @@ export function Dashboard({ data, searchedAnalysis, archiveSummary }: DashboardP
               </section>
             ) : null}
           </div>
+          {refreshRecommendationsFeedback ? (
+            <p className={`dashboard-refresh-message ${refreshRecommendationsFeedback.tone}`}>
+              {refreshRecommendationsFeedback.text}
+            </p>
+          ) : null}
         </section>
 
         <aside className="dashboard-sidebar">
@@ -1484,7 +1606,7 @@ export function Dashboard({ data, searchedAnalysis, archiveSummary }: DashboardP
                     horizon={activeHorizon}
                     sourceBatchDate={data.currentBatch.batchDate}
                     sourceGeneratedAt={data.currentBatch.generatedAt}
-                    currentPrice={spotlightCurrentPrice ?? spotlightStock.currentMarketPrice}
+                    currentPrice={spotlightCurrentPrice}
                     triggerClassName={`dashboard-row-action dashboard-row-action-primary ${signalStateFor(spotlightPlan, activeHorizon)}`}
                     triggerLabel={actionLabel(signalStateFor(spotlightPlan, activeHorizon), profileLabel)}
                     triggerTitle={actionLabel(signalStateFor(spotlightPlan, activeHorizon), profileLabel)}

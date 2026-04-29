@@ -1,6 +1,6 @@
 const DEFAULT_REFRESH_URL = "http://localhost:3000/api/refresh-market-data";
 const refreshUrl = process.env.MARKET_REFRESH_URL || DEFAULT_REFRESH_URL;
-const intervalHours = Number.parseFloat(process.env.MARKET_REFRESH_INTERVAL_HOURS || "5");
+const intervalHours = Number.parseFloat(process.env.MARKET_REFRESH_INTERVAL_HOURS || "0.5");
 const retryCount = parsePositiveInteger(process.env.MARKET_REFRESH_RETRIES, 2);
 const retryDelayMs = parsePositiveInteger(process.env.MARKET_REFRESH_RETRY_DELAY_MS, 15000);
 const args = new Set(process.argv.slice(2));

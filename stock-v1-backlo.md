@@ -59686,3 +59686,47 @@ The user asked to add two more wallet/automation features and then clarified the
 4. Add the requested portfolio holdings grid.
 5. Add a background bot script with market-hours monitoring, allocation decisions, exits, reports, and notifications.
 6. Run web/API/script validation and update TODO status.
+
+---
+
+## Extension: Portfolio/Bot Stabilization Session (2026-04-29)
+
+### User-reported issues
+- Portfolio page stopped showing daily bot reports / day-wise P&L.
+- Open positions needed to match realized-outcomes grid style.
+- Bot appeared to skip buys even when recommendations existed.
+- Suggested % often showed 0.00 unexpectedly.
+- Current price was not updating live reliably.
+- Refresh action lacked clear confirmation of whether recommendations actually changed.
+- Unrealized P&L looked random/jumpy.
+
+### What was changed
+- Restored portfolio report wiring so `data/trading-reports` entries render again on portfolio page.
+- Reworked open positions display to table/grid format with requested columns and actions.
+- Removed daily buy-count cap in bot logic (buy limit no longer hard-capped by count/day).
+- Added tighter recommendation-quality filters in bot selection (score/risk-reward/conviction gates).
+- Fixed execution price marking by introducing execution slippage handling and aligning target/stop to filled entry basis.
+- Adjusted refresh cadence logic:
+  - In-session staleness trigger moved to 30 minutes.
+  - Scheduler loop default changed to `0.5` hours.
+- Fixed live overlay API bottleneck by batching symbol requests server-side (instead of failing >25 symbols).
+- Fixed Suggested column behavior to show increase/decrease from suggested(entry) price.
+- Ensured sorting for Suggested and Now is percentage-based signals, not raw displayed price.
+- Added manual refresh control for recommendations and improved feedback states.
+- Added persisted refresh status feedback (session storage) so status survives navigation.
+- Improved refresh feedback text to explicitly state whether a new snapshot was created or data was unchanged.
+- Stabilized unrealized P&L by introducing last-known-live-price fallback to reduce jumpiness when overlay data is intermittent.
+
+### Clarifications discovered during debugging
+- Bot buy skips can still happen due to entry drift / trade-band checks / duplicate exposure / unavailable live prices.
+- “No cap” on sell count remains true; sells are trigger-driven.
+- Profit cannot be guaranteed; strategy quality depends heavily on selection and exit logic.
+
+### Validation checkpoints run
+- Multiple `npm run test:web` typechecks after each major patch: passing.
+- API tests had passed earlier (`npm run test:api`).
+
+### Follow-up opportunities (not yet implemented)
+- Add per-stock decision audit trail UI (why skipped/bought/sold on latest tick).
+- Add explicit live-price timestamp near key P&L metrics.
+- Add strategy guardrails to reduce model-drift churn exits (minimum hold / confirmation windows) if requested.

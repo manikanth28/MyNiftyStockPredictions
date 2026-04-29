@@ -104,6 +104,7 @@ export function PortfolioDashboard({ data, botReports = [], initialSymbol, initi
   const [notes, setNotes] = useState(DEFAULT_TICKET_NOTES);
   const [feedback, setFeedback] = useState<string | null>(null);
   const [feedbackTone, setFeedbackTone] = useState<FeedbackTone>("neutral");
+  const [lastKnownLivePriceBySymbol, setLastKnownLivePriceBySymbol] = useState<Record<string, number>>({});
 
   const stockBySymbol = useMemo(
     () => new Map(data.currentBatch.recommendations.map((stock) => [normalizeSymbol(stock.symbol), stock])),
@@ -119,6 +120,26 @@ export function PortfolioDashboard({ data, botReports = [], initialSymbol, initi
     ...visibleRecommendations.slice(0, 12).map((stock) => stock.symbol)
   ];
   const livePriceOverlay = useLatestPriceOverlay(liveSymbols);
+
+  useEffect(() => {
+    setLastKnownLivePriceBySymbol((current) => {
+      const next = { ...current };
+      let changed = false;
+
+      for (const [symbol, snapshot] of Object.entries(livePriceOverlay)) {
+        const livePrice = snapshot?.currentMarketPrice;
+
+        if (typeof livePrice === "number" && Number.isFinite(livePrice) && livePrice > 0) {
+          if (next[symbol] !== livePrice) {
+            next[symbol] = livePrice;
+            changed = true;
+          }
+        }
+      }
+
+      return changed ? next : current;
+    });
+  }, [livePriceOverlay]);
 
   useEffect(() => {
     const stored = readStoredWallet();
@@ -165,22 +186,30 @@ export function PortfolioDashboard({ data, botReports = [], initialSymbol, initi
       const normalized = normalizeSymbol(position.symbol);
       const stock = stockBySymbol.get(normalized);
       prices[position.symbol] =
-        livePriceOverlay[position.symbol]?.currentMarketPrice ?? stock?.currentMarketPrice ?? position.entryPrice;
+        livePriceOverlay[position.symbol]?.currentMarketPrice ??
+        lastKnownLivePriceBySymbol[position.symbol] ??
+        stock?.currentMarketPrice ??
+        position.entryPrice;
     }
 
     for (const stock of visibleRecommendations) {
-      prices[stock.symbol] = stockCurrentPrice(stock, livePriceOverlay[stock.symbol]?.currentMarketPrice);
+      prices[stock.symbol] = stockCurrentPrice(
+        stock,
+        livePriceOverlay[stock.symbol]?.currentMarketPrice ?? lastKnownLivePriceBySymbol[stock.symbol] ?? null
+      );
     }
 
     if (selectedStock) {
       prices[selectedStock.symbol] = stockCurrentPrice(
         selectedStock,
-        livePriceOverlay[selectedStock.symbol]?.currentMarketPrice
+        livePriceOverlay[selectedStock.symbol]?.currentMarketPrice ??
+          lastKnownLivePriceBySymbol[selectedStock.symbol] ??
+          null
       );
     }
 
     return prices;
-  }, [livePriceOverlay, selectedStock, stockBySymbol, visibleRecommendations, wallet?.openPositions]);
+  }, [lastKnownLivePriceBySymbol, livePriceOverlay, selectedStock, stockBySymbol, visibleRecommendations, wallet?.openPositions]);
 
   const metrics = useMemo(
     () => (wallet ? calculateWalletMetrics(wallet, currentPriceBySymbol) : null),
@@ -343,7 +372,16 @@ export function PortfolioDashboard({ data, botReports = [], initialSymbol, initi
           <small>{formatSignedPercent(metrics.totalReturnPct)} total return</small>
         </article>
         <article className={`portfolio-metric-card ${metrics.unrealizedPnl >= 0 ? "success" : "danger"}`}>
-          <span>Unrealized P&L</span>
+          <span>
+            Unrealized P&L
+            <span
+              className="portfolio-info-dot"
+              title="Unrealized P&L = sum of (Live price - Entry price) x Quantity for all open positions. It changes with live market prices and is not booked profit/loss until you sell."
+              aria-label="Unrealized P&L help"
+            >
+              i
+            </span>
+          </span>
           <strong>{formatSignedPrice(metrics.unrealizedPnl)}</strong>
           <small>{formatPrice(metrics.currentValue)} current open value</small>
         </article>

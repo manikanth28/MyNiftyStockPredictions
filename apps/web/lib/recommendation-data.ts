@@ -237,6 +237,7 @@ type ResearchCoverage = NonNullable<DataSourceInfo["researchCoverage"]>;
 const MARKET_UNIVERSE = NIFTY_100_UNIVERSE;
 const PRICE_OVERLAY_RANGE = "5d";
 const PRICE_OVERLAY_CONCURRENCY = 6;
+const SINGLE_DAY_REFRESH_INTERVAL_MS = 30 * 60 * 1000;
 
 const HORIZON_SETTINGS: Record<HorizonId, HorizonSettings> = {
   single_day: {
@@ -2390,11 +2391,15 @@ export async function getMarketRefreshReadiness(): Promise<MarketRefreshReadines
   const latestBatchDate = cachedDataset?.currentBatch.batchDate ?? null;
   const tradingDay = isMarketTradingDay();
   const marketSession = isMarketSession();
+  const generatedAtMs = cachedDataset ? Date.parse(cachedDataset.currentBatch.generatedAt) : Number.NaN;
+  const snapshotAgeMs = Number.isFinite(generatedAtMs) ? Date.now() - generatedAtMs : Number.POSITIVE_INFINITY;
+  const staleInSession = snapshotAgeMs >= SINGLE_DAY_REFRESH_INTERVAL_MS;
+  const batchDateBehind = !cachedDataset || cachedDataset.currentBatch.batchDate < expectedBatchDate;
   const shouldRefresh =
     tradingDay &&
     marketSession &&
     refreshJobStatus.state !== "running" &&
-    (!cachedDataset || cachedDataset.currentBatch.batchDate < expectedBatchDate);
+    (batchDateBehind || staleInSession);
 
   return {
     expectedBatchDate,
@@ -2403,9 +2408,11 @@ export async function getMarketRefreshReadiness(): Promise<MarketRefreshReadines
     isMarketSession: marketSession,
     shouldRefresh,
     detail: shouldRefresh
-      ? `Market session is open and the latest saved batch is ${latestBatchDate ?? "missing"}; expected batch date is ${expectedBatchDate}.`
+      ? batchDateBehind
+        ? `Market session is open and the latest saved batch is ${latestBatchDate ?? "missing"}; expected batch date is ${expectedBatchDate}.`
+        : `Market session is open and the current batch is older than 30 minutes (${cachedDataset?.currentBatch.generatedAt ?? "unknown"}).`
       : marketSession
-        ? `Market session is open and the dashboard is aligned to expected batch date ${expectedBatchDate}.`
+        ? `Market session is open and the current batch is fresh (updated within the last 30 minutes).`
         : tradingDay
           ? `Market is outside the configured NSE session window (${MARKET_OPEN_HOUR}:${String(MARKET_OPEN_MINUTE).padStart(2, "0")} to ${MARKET_CLOSE_HOUR}:${String(MARKET_CLOSE_MINUTE).padStart(2, "0")} IST).`
           : `Today is not treated as an NSE trading day; expected batch date is ${expectedBatchDate}.`

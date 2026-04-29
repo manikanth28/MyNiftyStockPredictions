@@ -20,16 +20,14 @@ export async function POST(request: Request) {
     ? body.symbols.filter((value): value is string => typeof value === "string" && value.trim().length > 0)
     : [];
 
-  if (symbols.length > 25) {
-    return NextResponse.json(
-      {
-        error: "Price sync is limited to 25 symbols per request."
-      },
-      { status: 400 }
-    );
-  }
-
-  const prices = await fetchLatestPriceOverlay(symbols);
+  const uniqueSymbols = [...new Set(symbols)];
+  const chunkSize = 25;
+  const pricesList = await Promise.all(
+    Array.from({ length: Math.ceil(uniqueSymbols.length / chunkSize) }, (_, index) =>
+      fetchLatestPriceOverlay(uniqueSymbols.slice(index * chunkSize, (index + 1) * chunkSize))
+    )
+  );
+  const prices = Object.assign({}, ...pricesList);
 
   return NextResponse.json({
     prices,
