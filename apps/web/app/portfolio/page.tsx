@@ -1,4 +1,5 @@
 import { PortfolioDashboard } from "@/components/portfolio-dashboard";
+import { listTradingReports } from "@/lib/portfolio-bot";
 import { loadRecommendationData } from "@/lib/recommendation-data";
 import type { HorizonId } from "@/lib/types";
 
@@ -19,10 +20,11 @@ function normalizeHorizon(value: string | undefined): HorizonId | undefined {
 
 export default async function PortfolioPage({ searchParams }: PageProps) {
   const params = (await searchParams) ?? {};
-  const dataset = await loadRecommendationData();
+  const [dataset, botReports] = await Promise.all([loadRecommendationData(), listTradingReports(14)]);
 
   return (
     <PortfolioDashboard
+      botReports={botReports}
       data={dataset}
       initialHorizon={normalizeHorizon(params.horizon)}
       initialSymbol={params.symbol}

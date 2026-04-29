@@ -35,6 +35,9 @@ export type WalletClosedTrade = WalletOpenPosition & {
   exitReason: WalletTradeExitReason;
   realizedPnl: number;
   returnPct: number;
+  exitNote?: string;
+  archiveEvaluatedOn?: string | null;
+  archiveHoldingDays?: number | null;
 };
 
 export type WalletLedgerEntry = {
@@ -89,9 +92,17 @@ export type BuyPositionInput = {
   notes?: string;
 };
 
-const WALLET_STORAGE_KEY = "stock-research-paper-wallet-v1";
+export type SellPositionOptions = {
+  quantity?: number;
+  closedAt?: string;
+  exitNote?: string;
+  archiveEvaluatedOn?: string | null;
+  archiveHoldingDays?: number | null;
+};
+
+export const WALLET_STORAGE_KEY = "stock-research-paper-wallet-v1";
 export const WALLET_STORAGE_EVENT = "stock-research-paper-wallet-updated";
-const DEFAULT_STARTING_CASH = 1_000_000;
+export const DEFAULT_STARTING_CASH = 1_000_000;
 const DEFAULT_RISK_PCT = 1;
 const LEDGER_LIMIT = 200;
 
@@ -171,7 +182,7 @@ export function createDefaultWallet(startingCash = DEFAULT_STARTING_CASH): Portf
   return withLedger(wallet, createLedgerEntry("deposit", "Initial paper wallet funding", cash, cash));
 }
 
-function isWallet(value: unknown): value is PortfolioWallet {
+export function isPortfolioWallet(value: unknown): value is PortfolioWallet {
   if (!value || typeof value !== "object") {
     return false;
   }
@@ -201,7 +212,7 @@ export function readStoredWallet(): PortfolioWallet | null {
     }
 
     const parsed = JSON.parse(payload);
-    return isWallet(parsed) ? parsed : null;
+    return isPortfolioWallet(parsed) ? parsed : null;
   } catch {
     return null;
   }
@@ -302,7 +313,8 @@ export function sellWalletPosition(
   wallet: PortfolioWallet,
   positionId: string,
   exitPrice: number,
-  exitReason: WalletTradeExitReason
+  exitReason: WalletTradeExitReason,
+  options: SellPositionOptions = {}
 ): PortfolioWallet {
   const position = wallet.openPositions.find((item) => item.id === positionId);
 
@@ -314,18 +326,30 @@ export function sellWalletPosition(
     throw new Error("Exit price must be greater than zero.");
   }
 
-  const closedAt = nowIso();
-  const exitValue = roundMoney(position.quantity * exitPrice);
-  const costBasis = roundMoney(position.quantity * position.entryPrice);
+  const requestedQuantity = sanitizeQuantity(options.quantity ?? position.quantity);
+
+  if (requestedQuantity <= 0) {
+    throw new Error("Exit quantity must be at least 1 share.");
+  }
+
+  const closedQuantity = Math.min(requestedQuantity, position.quantity);
+  const remainingQuantity = position.quantity - closedQuantity;
+  const closedAt = options.closedAt ?? nowIso();
+  const exitValue = roundMoney(closedQuantity * exitPrice);
+  const costBasis = roundMoney(closedQuantity * position.entryPrice);
   const realizedPnl = roundMoney(exitValue - costBasis);
   const returnPct = roundMoney((realizedPnl / Math.max(costBasis, 0.01)) * 100);
   const closedTrade: WalletClosedTrade = {
     ...position,
+    quantity: closedQuantity,
     closedAt,
     exitPrice: roundMoney(exitPrice),
     exitReason,
     realizedPnl,
-    returnPct
+    returnPct,
+    exitNote: options.exitNote,
+    archiveEvaluatedOn: options.archiveEvaluatedOn ?? null,
+    archiveHoldingDays: options.archiveHoldingDays ?? null
   };
   const nextCash = roundMoney(wallet.cashBalance + exitValue);
   const updatedWallet: PortfolioWallet = {
@@ -335,13 +359,29 @@ export function sellWalletPosition(
       updatedAt: closedAt
     },
     cashBalance: nextCash,
-    openPositions: wallet.openPositions.filter((item) => item.id !== positionId),
+    openPositions:
+      remainingQuantity > 0
+        ? wallet.openPositions.map((item) =>
+            item.id === positionId
+              ? {
+                  ...item,
+                  quantity: remainingQuantity
+                }
+              : item
+          )
+        : wallet.openPositions.filter((item) => item.id !== positionId),
     closedTrades: [closedTrade, ...wallet.closedTrades]
   };
 
   return withLedger(
     updatedWallet,
-    createLedgerEntry("sell", `Sold ${position.quantity} ${position.symbol}`, exitValue, nextCash, position.symbol)
+    createLedgerEntry(
+      "sell",
+      `Sold ${closedQuantity} ${position.symbol}${remainingQuantity > 0 ? ` (${remainingQuantity} remaining)` : ""}`,
+      exitValue,
+      nextCash,
+      position.symbol
+    )
   );
 }
 

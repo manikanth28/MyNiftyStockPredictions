@@ -1,0 +1,50 @@
+[
+  {
+    "id": "2026-04-28T05-54-32-634Z-dp86bk",
+    "trigger": "manual",
+    "status": "succeeded",
+    "startedAt": "2026-04-28T05:54:32.634Z",
+    "finishedAt": "2026-04-28T06:04:10.582Z",
+    "expectedBatchDate": "2026-04-28",
+    "previousBatchDate": "2026-04-28",
+    "batchDate": "2026-04-28",
+    "generatedAt": "2026-04-28T06:04:10.446Z",
+    "detail": "Full market dataset refreshed successfully.",
+    "error": null,
+    "processedSymbols": 100,
+    "totalSymbols": 100,
+    "force": false
+  },
+  {
+    "id": "2026-04-27T07-39-39-011Z-wgk3g6",
+    "trigger": "auto",
+    "status": "failed",
+    "startedAt": "2026-04-27T07:39:39.011Z",
+    "finishedAt": "2026-04-27T07:39:40.286Z",
+    "expectedBatchDate": "2026-04-27",
+    "previousBatchDate": "2026-04-24",
+    "batchDate": null,
+    "generatedAt": null,
+    "detail": "Live market refresh did not complete successfully. The previous cached snapshot is still available.",
+    "error": null,
+    "processedSymbols": 100,
+    "totalSymbols": 100,
+    "force": false
+  },
+  {
+    "id": "2026-04-27T05-33-34-566Z-31skx4",
+    "trigger": "auto",
+    "status": "failed",
+    "startedAt": "2026-04-27T05:33:34.566Z",
+    "finishedAt": "2026-04-27T05:33:35.111Z",
+    "expectedBatchDate": "2026-04-27",
+    "previousBatchDate": "2026-04-24",
+    "batchDate": null,
+    "generatedAt": null,
+    "detail": "Live market refresh did not complete successfully. The previous cached snapshot is still available.",
+    "error": null,
+    "processedSymbols": 100,
+    "totalSymbols": 100,
+    "force": false
+  }
+]

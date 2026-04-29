@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { type LatestPriceOverlay, readLatestPriceOverlay } from "@/components/market-ui";
 
-const LIVE_PRICE_SYNC_INTERVAL_MS = 5_000;
+const LIVE_PRICE_SYNC_INTERVAL_MS = 30_000;
 
 export function useLatestPriceOverlay(
   symbols: string[],

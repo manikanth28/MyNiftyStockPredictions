@@ -8,15 +8,13 @@ import {
   formatPrice,
   priceMoveMeta
 } from "@/components/market-ui";
+import { useSharedWallet } from "@/components/use-shared-wallet";
 import { useLatestPriceOverlay } from "@/components/use-latest-price-overlay";
 import {
-  buyWalletPosition,
   calculateWalletMetrics,
-  createDefaultWallet,
-  persistWallet,
-  readStoredWallet,
   suggestWalletCheckboxDefaults
 } from "@/lib/portfolio-wallet";
+import { buySharedWallet } from "@/lib/wallet-client";
 import type { PortfolioWallet } from "@/lib/portfolio-wallet";
 import type { HorizonId, RecommendationPlan, StockAnalysis } from "@/lib/types";
 
@@ -67,7 +65,7 @@ export function WalletBuyModal({
   triggerTitle = "Buy in paper wallet"
 }: WalletBuyModalProps) {
   const [isOpen, setIsOpen] = useState(false);
-  const [wallet, setWallet] = useState<PortfolioWallet | null>(null);
+  const { wallet, setWallet } = useSharedWallet();
   const [quantityInput, setQuantityInput] = useState("1");
   const [autoSellAtTarget, setAutoSellAtTarget] = useState(false);
   const [autoSellAtStopLoss, setAutoSellAtStopLoss] = useState(true);
@@ -75,18 +73,8 @@ export function WalletBuyModal({
   const [feedback, setFeedback] = useState<string | null>(null);
   const [feedbackTone, setFeedbackTone] = useState<FeedbackTone>("neutral");
   const [notice, setNotice] = useState<WalletNotice | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const livePriceOverlay = useLatestPriceOverlay(positionSymbols(wallet, stock));
-
-  useEffect(() => {
-    const storedWallet = readStoredWallet();
-    const nextWallet = storedWallet ?? createDefaultWallet();
-
-    if (!storedWallet) {
-      persistWallet(nextWallet);
-    }
-
-    setWallet(nextWallet);
-  }, []);
 
   useEffect(() => {
     if (!wallet || !isOpen) {
@@ -185,7 +173,7 @@ export function WalletBuyModal({
     setFeedbackTone(tone);
   }
 
-  function handleBuy() {
+  async function handleBuy() {
     if (buyBlockReason) {
       showFeedback(buyBlockReason, wallet ? "danger" : "neutral");
       return;
@@ -197,7 +185,8 @@ export function WalletBuyModal({
     }
 
     try {
-      const nextWallet = buyWalletPosition(wallet, {
+      setIsSubmitting(true);
+      const nextWallet = await buySharedWallet({
         stock,
         plan,
         horizon,
@@ -209,7 +198,6 @@ export function WalletBuyModal({
         notes
       });
 
-      persistWallet(nextWallet);
       setWallet(nextWallet);
       setNotice({
         tone: "success",
@@ -219,6 +207,8 @@ export function WalletBuyModal({
       setIsOpen(false);
     } catch (error) {
       showFeedback(error instanceof Error ? error.message : "Unable to buy this position.", "danger");
+    } finally {
+      setIsSubmitting(false);
     }
   }
 
@@ -356,10 +346,11 @@ export function WalletBuyModal({
             <div className="wallet-modal-actions">
               <button
                 className="portfolio-primary-button"
+                disabled={isSubmitting}
                 onClick={handleBuy}
                 type="button"
               >
-                Confirm buy
+                {isSubmitting ? "Saving..." : "Confirm buy"}
               </button>
               <Link className="portfolio-secondary-button" href="/portfolio" onClick={closeModal}>
                 Open portfolio

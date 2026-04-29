@@ -1,6 +1,10 @@
 import { StockDetail } from "@/components/stock-detail";
 import type { SearchAnalysisResult } from "@/lib/types";
-import { analyzeSearchSymbolWithTimeout, loadRecommendationData } from "@/lib/recommendation-data";
+import {
+  analyzeSearchSymbolWithTimeout,
+  compactStockDetailDataset,
+  loadRecommendationData
+} from "@/lib/recommendation-data";
 
 export const dynamic = "force-dynamic";
 
@@ -17,6 +21,13 @@ export default async function StockPage({ params }: StockPageProps) {
   const analysis: SearchAnalysisResult | null = symbol
     ? await analyzeSearchSymbolWithTimeout(symbol, dataset)
     : null;
+  const detailDataset = compactStockDetailDataset(dataset, symbol, analysis?.stock);
+  const displayAnalysis = analysis
+    ? {
+        ...analysis,
+        stock: null
+      }
+    : null;
 
-  return <StockDetail data={dataset} analysis={analysis} requestedSymbol={symbol} />;
+  return <StockDetail data={detailDataset} analysis={displayAnalysis} requestedSymbol={symbol} />;
 }

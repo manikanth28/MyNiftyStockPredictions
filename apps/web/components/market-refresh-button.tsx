@@ -43,6 +43,8 @@ type MarketRefreshButtonProps = {
   hint?: string;
   idleLabel?: string;
   pendingLabel?: string;
+  ariaLabel?: string;
+  iconOnly?: boolean;
   autoRefresh?: boolean;
   autoRefreshIntervalMs?: number;
 };
@@ -102,6 +104,8 @@ export function MarketRefreshButton({
   hint,
   idleLabel = "Refresh all data",
   pendingLabel = "Refreshing all data...",
+  ariaLabel = "Refresh all market data",
+  iconOnly = false,
   autoRefresh = true,
   autoRefreshIntervalMs = AUTO_REFRESH_CHECK_MS
 }: MarketRefreshButtonProps) {
@@ -322,14 +326,17 @@ export function MarketRefreshButton({
     <div className={containerClassName}>
       <button
         aria-busy={isRefreshing}
+        aria-label={ariaLabel}
         className={`${buttonClassName}${isRefreshing ? " is-loading" : ""}`}
         disabled={isRefreshing}
         onClick={handleRefresh}
+        title={ariaLabel}
         type="button"
       >
         <span className="market-refresh-button-content">
           {isRefreshing ? <span aria-hidden="true" className="market-refresh-loader" /> : null}
-          <span>{isRefreshing ? pendingLabel : idleLabel}</span>
+          {iconOnly ? <span aria-hidden="true" className="market-refresh-icon" /> : null}
+          <span className={iconOnly ? "sr-only" : undefined}>{isRefreshing ? pendingLabel : idleLabel}</span>
         </span>
       </button>
 

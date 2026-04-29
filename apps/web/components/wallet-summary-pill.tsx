@@ -1,58 +1,19 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 import { formatPrice } from "@/components/market-ui";
+import { useSharedWallet } from "@/components/use-shared-wallet";
 import { useLatestPriceOverlay } from "@/components/use-latest-price-overlay";
-import {
-  WALLET_STORAGE_EVENT,
-  calculateWalletMetrics,
-  createDefaultWallet,
-  persistWallet,
-  readStoredWallet
-} from "@/lib/portfolio-wallet";
-import type { PortfolioWallet } from "@/lib/portfolio-wallet";
+import { calculateWalletMetrics } from "@/lib/portfolio-wallet";
 
 function formatSignedPrice(value: number) {
   const prefix = value > 0 ? "+" : value < 0 ? "-" : "";
   return `${prefix}${formatPrice(Math.abs(value))}`;
 }
 
-function readOrCreateWallet() {
-  const storedWallet = readStoredWallet();
-
-  if (storedWallet) {
-    return storedWallet;
-  }
-
-  const wallet = createDefaultWallet();
-  persistWallet(wallet);
-  return wallet;
-}
-
 export function WalletSummaryPill() {
-  const [wallet, setWallet] = useState<PortfolioWallet | null>(null);
-
-  useEffect(() => {
-    setWallet(readOrCreateWallet());
-
-    const refreshWallet = () => {
-      setWallet(readStoredWallet());
-    };
-    const handleStorage = (event: StorageEvent) => {
-      if (!event.key || event.key.includes("paper-wallet")) {
-        refreshWallet();
-      }
-    };
-
-    window.addEventListener(WALLET_STORAGE_EVENT, refreshWallet);
-    window.addEventListener("storage", handleStorage);
-
-    return () => {
-      window.removeEventListener(WALLET_STORAGE_EVENT, refreshWallet);
-      window.removeEventListener("storage", handleStorage);
-    };
-  }, []);
+  const { wallet } = useSharedWallet();
 
   const symbols = useMemo(() => wallet?.openPositions.map((position) => position.symbol) ?? [], [wallet]);
   const livePriceOverlay = useLatestPriceOverlay(symbols, 15000);
@@ -67,15 +28,23 @@ export function WalletSummaryPill() {
     return prices;
   }, [livePriceOverlay, wallet?.openPositions]);
   const metrics = wallet ? calculateWalletMetrics(wallet, currentPriceBySymbol) : null;
-  const pnlTone = metrics && metrics.totalPnl < 0 ? "danger" : "success";
+  const pnlTone = metrics && metrics.unrealizedPnl < 0 ? "danger" : "success";
 
   return (
-    <Link className={`wallet-summary-pill ${pnlTone}`} href="/portfolio" title="Open paper portfolio">
+    <Link
+      className={`wallet-summary-pill ${pnlTone}`}
+      href="/portfolio"
+      title={
+        metrics
+          ? `Open paper portfolio. Cash ${formatPrice(metrics.availableCash)}. Total equity ${formatPrice(metrics.totalEquity)}.`
+          : "Open paper portfolio"
+      }
+    >
       <span>Portfolio value</span>
-      <strong>{metrics ? formatPrice(metrics.totalEquity) : "Loading"}</strong>
-      <small>
+      <strong>{metrics ? formatPrice(metrics.currentValue) : "Loading"}</strong>
+      <small className="wallet-summary-pnl">
         {metrics
-          ? `${metrics.openPositionCount} open · P&L ${formatSignedPrice(metrics.totalPnl)}`
+          ? `P&L ${formatSignedPrice(metrics.unrealizedPnl)}`
           : "Reading wallet"}
       </small>
     </Link>

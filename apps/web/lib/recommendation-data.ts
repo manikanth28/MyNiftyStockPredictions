@@ -495,7 +495,7 @@ function cachedDatasetDetail(dataset: RecommendationDataset, liveRefreshAttempte
 
   return liveRefreshAttempted
     ? `Showing the last successful cached snapshot from ${dataset.currentBatch.generatedAt} because the live refresh did not complete. The saved batch is ${stalenessLabel}; the latest expected market batch date is ${expectedBatchDate}.`
-    : `Showing the last successful cached snapshot from ${dataset.currentBatch.generatedAt}. The saved batch is ${stalenessLabel}; the latest expected market batch date is ${expectedBatchDate}, so the app will try a live rebuild before reusing this cache.`;
+    : `Showing the last successful cached snapshot from ${dataset.currentBatch.generatedAt}. The saved batch is ${stalenessLabel}; the latest expected market batch date is ${expectedBatchDate}. Use Refresh all data or the scheduled market scan to rebuild the live snapshot.`;
 }
 
 function setRefreshJobStatus(status: Partial<RecommendationRefreshStatus>) {
@@ -2361,6 +2361,28 @@ async function readGeneratedDataset() {
   }
 }
 
+export async function loadRecommendationSnapshot(): Promise<RecommendationDataset> {
+  const memoryDataset = readDatasetMemoryCache();
+
+  if (memoryDataset) {
+    return memoryDataset;
+  }
+
+  const cachedDataset = await readGeneratedDataset();
+
+  if (cachedDataset) {
+    return rememberDataset(cachedDataset);
+  }
+
+  return rememberDataset(
+    annotateFallbackDataset(
+      await readSampleDataset(),
+      "sample",
+      "No generated snapshot was available, so monitoring is reading the sample fallback dataset."
+    )
+  );
+}
+
 export async function getMarketRefreshReadiness(): Promise<MarketRefreshReadiness> {
   const memoryDataset = readDatasetMemoryCache();
   const cachedDataset = memoryDataset ?? (await readGeneratedDataset());
@@ -4124,16 +4146,208 @@ function annotateFallbackDataset(
   };
 }
 
+function compactRecommendationPlan(plan: RecommendationPlan): RecommendationPlan {
+  return {
+    score: plan.score,
+    rank: plan.rank,
+    isRecommended: plan.isRecommended,
+    conviction: plan.conviction,
+    entryPrice: plan.entryPrice,
+    targetPrice: plan.targetPrice,
+    stopLoss: plan.stopLoss,
+    expectedReturnPct: plan.expectedReturnPct,
+    riskReward: plan.riskReward,
+    summary: plan.summary,
+    drivers: plan.drivers.slice(0, 2),
+    technicalSignals: [],
+    fundamentalSignals: [],
+    sentimentSignals: [],
+    earningsSignals: [],
+    analystSignals: [],
+    riskSignals: [],
+    newsContext: []
+  };
+}
+
+function compactStockSummary(stock: StockAnalysis): StockAnalysis {
+  return {
+    symbol: stock.symbol,
+    companyName: stock.companyName,
+    sector: stock.sector,
+    industry: stock.industry,
+    marketCapBucket: stock.marketCapBucket,
+    liquidityTier: stock.liquidityTier,
+    currentMarketPrice: stock.currentMarketPrice,
+    latestSessionChangePct: stock.latestSessionChangePct,
+    fundamentals: stock.fundamentals
+      ? {
+          ...stock.fundamentals,
+          summary: ""
+        }
+      : null,
+    sentiment: stock.sentiment
+      ? {
+          ...stock.sentiment,
+          headlines: []
+        }
+      : null,
+    derivatives: null,
+    profiles: {
+      single_day: compactRecommendationPlan(stock.profiles.single_day),
+      swing: compactRecommendationPlan(stock.profiles.swing),
+      position: compactRecommendationPlan(stock.profiles.position),
+      long_term: compactRecommendationPlan(stock.profiles.long_term)
+    }
+  };
+}
+
+function compactHistoricalPlan(
+  plan: HistoricalRecommendationPlan,
+  keepSummary: boolean,
+  keepOutcomeDetail: boolean
+): HistoricalRecommendationPlan {
+  return {
+    score: plan.score,
+    rank: plan.rank,
+    isRecommended: plan.isRecommended,
+    conviction: plan.conviction,
+    entryPrice: plan.entryPrice,
+    targetPrice: plan.targetPrice,
+    stopLoss: plan.stopLoss,
+    summary: keepSummary ? plan.summary : "",
+    outcome: keepOutcomeDetail
+      ? plan.outcome
+      : {
+          result: plan.outcome.result,
+          evaluatedOn: "",
+          holdingDays: 0,
+          returnPct: plan.outcome.returnPct,
+          benchmarkReturnPct: null,
+          notes: ""
+        }
+  };
+}
+
+function compactHistory(
+  history: HistoricalBatch[],
+  {
+    keepOutcomeDetail,
+    keepSummary,
+    symbol
+  }: {
+    keepSummary: boolean;
+    keepOutcomeDetail?: boolean;
+    symbol?: string;
+  }
+): HistoricalBatch[] {
+  const normalizedSymbol = symbol ? normalizeOverlaySymbol(symbol) : null;
+  const preserveOutcomeDetail = keepOutcomeDetail ?? keepSummary;
+
+  return history
+    .map((batch) => ({
+      batchDate: batch.batchDate,
+      publishedAt: batch.publishedAt,
+      recommendations: batch.recommendations
+        .filter((stock) => !normalizedSymbol || normalizeOverlaySymbol(stock.symbol) === normalizedSymbol)
+        .map((stock) => ({
+          symbol: stock.symbol,
+          companyName: stock.companyName,
+          sector: stock.sector,
+          profiles: {
+            single_day: compactHistoricalPlan(stock.profiles.single_day, keepSummary, preserveOutcomeDetail),
+            swing: compactHistoricalPlan(stock.profiles.swing, keepSummary, preserveOutcomeDetail),
+            position: compactHistoricalPlan(stock.profiles.position, keepSummary, preserveOutcomeDetail),
+            long_term: compactHistoricalPlan(stock.profiles.long_term, keepSummary, preserveOutcomeDetail)
+          }
+        }))
+    }))
+    .filter((batch) => batch.recommendations.length > 0 || !normalizedSymbol);
+}
+
+export function compactDashboardDataset(dataset: RecommendationDataset): RecommendationDataset {
+  return {
+    ...dataset,
+    currentBatch: {
+      ...dataset.currentBatch,
+      recommendations: dataset.currentBatch.recommendations.map(compactStockSummary)
+    },
+    history: []
+  };
+}
+
+export function compactHistoryDataset(dataset: RecommendationDataset): RecommendationDataset {
+  return {
+    ...dataset,
+    currentBatch: {
+      ...dataset.currentBatch,
+      recommendations: []
+    },
+    history: compactHistory(dataset.history, {
+      keepSummary: true
+    })
+  };
+}
+
+export function compactPortfolioDataset(dataset: RecommendationDataset): RecommendationDataset {
+  return {
+    ...dataset,
+    currentBatch: {
+      ...dataset.currentBatch,
+      recommendations: dataset.currentBatch.recommendations.map(compactStockSummary)
+    },
+    history: []
+  };
+}
+
+export function compactStockDetailDataset(
+  dataset: RecommendationDataset,
+  symbol: string,
+  stockOverride?: StockAnalysis | null
+): RecommendationDataset {
+  const normalizedSymbol = normalizeOverlaySymbol(symbol);
+  const selectedStock =
+    stockOverride ??
+    dataset.currentBatch.recommendations.find(
+      (stock) => normalizeOverlaySymbol(stock.symbol) === normalizedSymbol
+    ) ??
+    null;
+
+  return {
+    ...dataset,
+    currentBatch: {
+      ...dataset.currentBatch,
+      recommendations: selectedStock ? [selectedStock] : []
+    },
+    history: compactHistory(dataset.history, {
+      keepSummary: true,
+      symbol
+    })
+  };
+}
+
+export function compactSearchAnalysisResult(
+  analysis: SearchAnalysisResult | null
+): SearchAnalysisResult | null {
+  if (!analysis?.stock) {
+    return analysis;
+  }
+
+  return {
+    ...analysis,
+    stock: compactStockSummary(analysis.stock)
+  };
+}
+
 export async function loadRecommendationData(): Promise<RecommendationDataset> {
   const memoryDataset = readDatasetMemoryCache();
 
-  if (memoryDataset && !isDatasetStale(memoryDataset)) {
+  if (memoryDataset) {
     return memoryDataset;
   }
 
   const cachedDataset = await readGeneratedDataset();
 
-  if (cachedDataset && !isDatasetStale(cachedDataset)) {
+  if (cachedDataset) {
     return rememberDataset(
       annotateFallbackDataset(
         cachedDataset,
@@ -4143,29 +4357,49 @@ export async function loadRecommendationData(): Promise<RecommendationDataset> {
     );
   }
 
-  const liveDataset = await buildLiveDataset();
-
-  if (liveDataset) {
-    return liveDataset;
-  }
-
-  if (cachedDataset) {
-    return rememberDataset(
-      annotateFallbackDataset(
-        cachedDataset,
-        "cached",
-        cachedDatasetDetail(cachedDataset, true)
-      )
-    );
-  }
-
   return rememberDataset(
     annotateFallbackDataset(
       await readSampleDataset(),
       "sample",
-      "Live market requests failed and no cached snapshot was available, so the demo dataset is being shown."
+      "No generated snapshot was available, so the demo dataset is being shown. Use Refresh all data or the scheduled market scan to create a live snapshot."
     )
   );
+}
+
+function buildCachedSearchAnalysisResult(
+  query: string,
+  referenceDataset?: RecommendationDataset
+): SearchAnalysisResult | null {
+  const trimmedQuery = query.trim();
+
+  if (!trimmedQuery || !referenceDataset) {
+    return null;
+  }
+
+  const normalizedQuery = normalizeOverlaySymbol(trimmedQuery);
+  const stock =
+    referenceDataset.currentBatch.recommendations.find(
+      (candidate) => normalizeOverlaySymbol(candidate.symbol) === normalizedQuery
+    ) ?? null;
+
+  if (!stock) {
+    return null;
+  }
+
+  const verdict = searchVerdict(stock);
+
+  return {
+    status: "analyzed",
+    query: trimmedQuery,
+    symbol: stock.symbol,
+    companyName: stock.companyName,
+    sector: stock.sector,
+    industry: stock.industry,
+    shouldConsider: verdict.shouldConsider,
+    verdict: verdict.verdict,
+    recommendedHorizons: verdict.recommendedHorizons,
+    stock
+  };
 }
 
 export async function analyzeSearchSymbol(
@@ -4307,6 +4541,12 @@ export async function analyzeSearchSymbolWithTimeout(
   referenceDataset?: RecommendationDataset,
   timeoutMs = 8000
 ): Promise<SearchAnalysisResult | null> {
+  const cachedAnalysis = buildCachedSearchAnalysisResult(query, referenceDataset);
+
+  if (cachedAnalysis) {
+    return cachedAnalysis;
+  }
+
   let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
 
   return Promise.race([

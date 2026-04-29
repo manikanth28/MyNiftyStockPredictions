@@ -24,10 +24,12 @@ import {
   suggestWalletCheckboxDefaults
 } from "@/lib/portfolio-wallet";
 import type { PortfolioWallet, WalletOpenPosition, WalletTradeExitReason } from "@/lib/portfolio-wallet";
+import type { TradingReportIndexEntry } from "@/lib/portfolio-bot";
 import type { HorizonId, RecommendationDataset, StockAnalysis } from "@/lib/types";
 
 type PortfolioDashboardProps = {
   data: RecommendationDataset;
+  botReports?: TradingReportIndexEntry[];
   initialSymbol?: string;
   initialHorizon?: HorizonId;
 };
@@ -91,7 +93,7 @@ function stockCurrentPrice(stock: StockAnalysis, latestPrice?: number | null) {
   return latestPrice && Number.isFinite(latestPrice) ? latestPrice : stock.currentMarketPrice;
 }
 
-export function PortfolioDashboard({ data, initialSymbol, initialHorizon }: PortfolioDashboardProps) {
+export function PortfolioDashboard({ data, botReports = [], initialSymbol, initialHorizon }: PortfolioDashboardProps) {
   const [wallet, setWallet] = useState<PortfolioWallet | null>(null);
   const [activeHorizon, setActiveHorizon] = useState<HorizonId>(() => defaultHorizon(data, initialHorizon));
   const [selectedSymbol, setSelectedSymbol] = useState("");
@@ -499,54 +501,66 @@ export function PortfolioDashboard({ data, initialSymbol, initialHorizon }: Port
           </div>
 
           {wallet.openPositions.length ? (
-            <div className="portfolio-position-list">
-              {wallet.openPositions.map((position) => {
-                const currentPrice = currentPriceBySymbol[position.symbol] ?? position.entryPrice;
-                const currentValue = currentPrice * position.quantity;
-                const costBasis = position.entryPrice * position.quantity;
-                const pnl = currentValue - costBasis;
-                const pnlPct = (pnl / Math.max(costBasis, 0.01)) * 100;
-                const move = priceMoveMeta(currentPrice, position.entryPrice);
+            <div className="portfolio-history-table-wrap">
+              <table className="portfolio-history-table">
+                <thead>
+                  <tr>
+                    <th>Stock</th>
+                    <th>Qty</th>
+                    <th>Avg price</th>
+                    <th>LTP</th>
+                    <th>Invested</th>
+                    <th>Current value</th>
+                    <th>P&L</th>
+                    <th>Day change</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {wallet.openPositions.map((position) => {
+                    const currentPrice = currentPriceBySymbol[position.symbol] ?? position.entryPrice;
+                    const currentValue = currentPrice * position.quantity;
+                    const costBasis = position.entryPrice * position.quantity;
+                    const pnl = currentValue - costBasis;
+                    const pnlPct = (pnl / Math.max(costBasis, 0.01)) * 100;
+                    const dayChangePct = livePriceOverlay[position.symbol]?.latestSessionChangePct ?? null;
 
-                return (
-                  <article className="portfolio-position-card" key={position.id}>
-                    <div className="portfolio-position-top">
-                      <div>
-                        <strong>{position.symbol}</strong>
-                        <span>{position.companyName}</span>
-                      </div>
-                      <span className={`portfolio-position-pnl ${pnl >= 0 ? "success" : "danger"}`}>
-                        {formatSignedPrice(pnl)} / {formatSignedPercent(pnlPct)}
-                      </span>
-                    </div>
-                    <div className="portfolio-position-grid">
-                      <span>Qty {formatNumber(position.quantity)}</span>
-                      <span>Entry {formatPrice(position.entryPrice)}</span>
-                      <span>Now {formatPrice(currentPrice)}</span>
-                      <span className={move.tone}>{move.move}</span>
-                      <span>Target {formatPrice(position.targetPrice)}</span>
-                      <span>Stop {formatPrice(position.stopLoss)}</span>
-                    </div>
-                    <div className="portfolio-position-rules">
-                      <span>{position.autoSellAtTarget ? "Target auto-sell on" : "Target auto-sell off"}</span>
-                      <span>{position.autoSellAtStopLoss ? "Stop auto-sell on" : "Stop auto-sell off"}</span>
-                      <span>Opened {formatDateTime(position.openedAt)}</span>
-                    </div>
-                    <div className="portfolio-position-actions">
-                      <Link className="portfolio-secondary-button compact" href={`/stocks/${position.symbol}`}>
-                        Review
-                      </Link>
-                      <button
-                        className="portfolio-secondary-button compact"
-                        onClick={() => handleSell(position, "manual")}
-                        type="button"
-                      >
-                        Manual sell
-                      </button>
-                    </div>
-                  </article>
-                );
-              })}
+                    return (
+                      <tr key={position.id}>
+                        <td>
+                          <strong>{position.symbol}</strong>
+                          <span>{position.companyName}</span>
+                        </td>
+                        <td>{formatNumber(position.quantity)}</td>
+                        <td>{formatPrice(position.entryPrice)}</td>
+                        <td>{formatPrice(currentPrice)}</td>
+                        <td>{formatPrice(costBasis)}</td>
+                        <td>{formatPrice(currentValue)}</td>
+                        <td className={pnl >= 0 ? "success" : "danger"}>
+                          {formatSignedPrice(pnl)} / {formatSignedPercent(pnlPct)}
+                        </td>
+                        <td className={(dayChangePct ?? 0) >= 0 ? "success" : "danger"}>
+                          {dayChangePct === null ? "n/a" : formatSignedPercent(dayChangePct)}
+                        </td>
+                        <td>
+                          <div className="portfolio-position-actions">
+                            <Link className="portfolio-secondary-button compact" href={`/stocks/${position.symbol}`}>
+                              Review
+                            </Link>
+                            <button
+                              className="portfolio-secondary-button compact"
+                              onClick={() => handleSell(position, "manual")}
+                              type="button"
+                            >
+                              Manual sell
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
           ) : (
             <p className="portfolio-empty-copy">No open positions yet. Add a recommendation from the trade ticket.</p>
@@ -603,6 +617,52 @@ export function PortfolioDashboard({ data, initialSymbol, initialHorizon }: Port
           </div>
         ) : (
           <p className="portfolio-empty-copy">Closed trades will appear after a manual sell or auto target/stop exit.</p>
+        )}
+      </section>
+
+      <section className="card portfolio-history-card">
+        <div className="portfolio-section-head">
+          <div>
+            <span className="section-eyebrow">Daily reports</span>
+            <h2>Bot-generated day-wise profit/loss</h2>
+          </div>
+          <span className="portfolio-batch-pill">{botReports.length} days</span>
+        </div>
+
+        {botReports.length ? (
+          <div className="portfolio-history-table-wrap">
+            <table className="portfolio-history-table">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Generated</th>
+                  <th>Trades</th>
+                  <th>Open</th>
+                  <th>P&L</th>
+                  <th>Files</th>
+                </tr>
+              </thead>
+              <tbody>
+                {botReports.map((report) => (
+                  <tr key={report.reportDate}>
+                    <td>{report.reportDate}</td>
+                    <td>{formatDateTime(report.generatedAt)}</td>
+                    <td>{report.buys + report.sells}</td>
+                    <td>{report.openPositions}</td>
+                    <td className={report.totalPnl >= 0 ? "success" : "danger"}>
+                      {formatSignedPrice(report.totalPnl)}
+                    </td>
+                    <td>
+                      <span>{report.jsonFile}</span>
+                      <span>{report.markdownFile}</span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <p className="portfolio-empty-copy">No daily report files found yet.</p>
         )}
       </section>
     </main>

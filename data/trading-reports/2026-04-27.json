@@ -1,0 +1,86 @@
+{
+  "reportDate": "2026-04-27",
+  "generatedAt": "2026-04-27T15:06:54.613Z",
+  "batchDate": "2026-04-27",
+  "cashBalance": 700493.5,
+  "totalInvestment": 299192.55,
+  "currentValue": 299224.7,
+  "dayPnl": 6226.1,
+  "totalPnl": -281.8,
+  "actions": [
+    {
+      "type": "hold",
+      "symbol": "PFC",
+      "reason": "No exit rule triggered.",
+      "price": 474.9,
+      "horizon": "position",
+      "createdAt": "2026-04-27T15:06:54.471Z"
+    },
+    {
+      "type": "hold",
+      "symbol": "TATAPOWER",
+      "reason": "No exit rule triggered.",
+      "price": 453.2,
+      "horizon": "swing",
+      "createdAt": "2026-04-27T15:06:54.471Z"
+    },
+    {
+      "type": "hold",
+      "symbol": "ADANIPORTS",
+      "reason": "No exit rule triggered.",
+      "price": 1628.5,
+      "horizon": "swing",
+      "createdAt": "2026-04-27T15:06:54.471Z"
+    },
+    {
+      "type": "skip",
+      "symbol": null,
+      "reason": "Buy checks skipped because NSE market session is closed.",
+      "createdAt": "2026-04-27T15:06:54.481Z"
+    },
+    {
+      "type": "report",
+      "symbol": null,
+      "reason": "Daily trading report was written.",
+      "createdAt": "2026-04-27T15:06:54.613Z"
+    }
+  ],
+  "positions": [
+    {
+      "symbol": "PFC",
+      "companyName": "Power Finance Corporation Limited",
+      "quantity": 210,
+      "averageCost": 475.3,
+      "ltp": 474.9,
+      "invested": 99813,
+      "currentValue": 99729,
+      "pnl": -84,
+      "netChangePct": -0.08,
+      "dayChangePct": 1.18
+    },
+    {
+      "symbol": "TATAPOWER",
+      "companyName": "Tata Power Company Limited",
+      "quantity": 221,
+      "averageCost": 452.15,
+      "ltp": 453.2,
+      "invested": 99925.15,
+      "currentValue": 100157.2,
+      "pnl": 232.05,
+      "netChangePct": 0.23,
+      "dayChangePct": 4.18
+    },
+    {
+      "symbol": "ADANIPORTS",
+      "companyName": "Adani Ports and Special Economic Zone Limited",
+      "quantity": 61,
+      "averageCost": 1630.4,
+      "ltp": 1628.5,
+      "invested": 99454.4,
+      "currentValue": 99338.5,
+      "pnl": -115.9,
+      "netChangePct": -0.12,
+      "dayChangePct": 2.74
+    }
+  ]
+}

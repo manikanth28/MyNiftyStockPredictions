@@ -1,0 +1,46 @@
+{
+  "reportDate": "2026-04-28",
+  "generatedAt": "2026-04-28T10:05:48.260Z",
+  "batchDate": "2026-04-28",
+  "cashBalance": 900105.66,
+  "totalInvestment": 99813,
+  "currentValue": 101094,
+  "dayPnl": 2047.5,
+  "totalPnl": 1199.66,
+  "actions": [
+    {
+      "type": "hold",
+      "symbol": "PFC",
+      "reason": "No exit rule triggered.",
+      "price": 481.4,
+      "horizon": "position",
+      "createdAt": "2026-04-28T10:05:48.199Z"
+    },
+    {
+      "type": "skip",
+      "symbol": null,
+      "reason": "Buy checks skipped because NSE market session is closed.",
+      "createdAt": "2026-04-28T10:05:48.199Z"
+    },
+    {
+      "type": "report",
+      "symbol": null,
+      "reason": "Daily trading report was written.",
+      "createdAt": "2026-04-28T10:05:48.261Z"
+    }
+  ],
+  "positions": [
+    {
+      "symbol": "PFC",
+      "companyName": "Power Finance Corporation Limited",
+      "quantity": 210,
+      "averageCost": 475.3,
+      "ltp": 481.4,
+      "invested": 99813,
+      "currentValue": 101094,
+      "pnl": 1281,
+      "netChangePct": 1.28,
+      "dayChangePct": 1.37
+    }
+  ]
+}

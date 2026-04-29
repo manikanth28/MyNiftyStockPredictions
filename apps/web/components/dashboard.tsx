@@ -16,7 +16,6 @@ import {
 import { StockSearchBox } from "@/components/stock-search-box";
 import { useLatestPriceOverlay } from "@/components/use-latest-price-overlay";
 import { WalletBuyModal } from "@/components/wallet-buy-modal";
-import { buildDailyPerformance, buildPerformanceSummary } from "@/lib/analytics";
 import type {
   HorizonId,
   RecommendationDataset,
@@ -28,6 +27,20 @@ import type {
 type DashboardProps = {
   data: RecommendationDataset;
   searchedAnalysis: SearchAnalysisResult | null;
+  archiveSummary: DashboardArchiveSummary;
+};
+
+export type DashboardArchiveSummary = {
+  historyCount: number;
+  byHorizon: Record<
+    HorizonId,
+    {
+      averageClosedReturnPct: number | null;
+      averageSuccessRate: number | null;
+      latestCompletedBatchDate: string | null;
+      latestCompletedSuccessRate: number | null;
+    }
+  >;
 };
 
 type SignalState = "consider" | "watch" | "avoid";
@@ -944,7 +957,7 @@ function TopMoverList({
   );
 }
 
-export function Dashboard({ data, searchedAnalysis }: DashboardProps) {
+export function Dashboard({ data, searchedAnalysis, archiveSummary }: DashboardProps) {
   const [activeHorizon, setActiveHorizon] = useState<HorizonId>(data.profiles[0]?.id ?? "single_day");
   const [sortKey, setSortKey] = useState<SortKey>("score");
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
@@ -1111,14 +1124,7 @@ export function Dashboard({ data, searchedAnalysis }: DashboardProps) {
   const searchedCurrentPrice = searchedAnalysis?.stock ? currentPriceFor(searchedAnalysis.stock) : null;
   const searchedDayStartPrice = searchedAnalysis?.stock ? dayStartPriceFor(searchedAnalysis.stock) : null;
 
-  const dailyPerformance = useMemo(
-    () => buildDailyPerformance(data.history, activeHorizon),
-    [activeHorizon, data.history]
-  );
-  const performanceSummary = useMemo(
-    () => buildPerformanceSummary(dailyPerformance),
-    [dailyPerformance]
-  );
+  const performanceSummary = archiveSummary.byHorizon[activeHorizon];
 
   const spotlightStock =
     displayedRecommendations.find((stock) => stock.symbol === selectedSymbol) ?? displayedRecommendations[0];
@@ -1192,15 +1198,16 @@ export function Dashboard({ data, searchedAnalysis }: DashboardProps) {
       icon: "AR",
       label: "Avg return",
       tooltip: "Average return across completed recommendation batches.",
-      value: formatPercent(performanceSummary.averageClosedReturnPct),
-      footnote: `Success ${formatPercent(performanceSummary.averageSuccessRate)}`
+      value: formatPercent(performanceSummary?.averageClosedReturnPct ?? null),
+      footnote: `Success ${formatPercent(performanceSummary?.averageSuccessRate ?? null)}`
     }
   ];
 
-  const archiveSuccessRate = performanceSummary.latestCompleted?.successRate ?? performanceSummary.averageSuccessRate;
-  const archiveReturn = performanceSummary.averageClosedReturnPct;
-  const latestCompletedDate = performanceSummary.latestCompleted?.batchDate
-    ? formatDate(performanceSummary.latestCompleted.batchDate)
+  const archiveSuccessRate =
+    performanceSummary?.latestCompletedSuccessRate ?? performanceSummary?.averageSuccessRate ?? null;
+  const archiveReturn = performanceSummary?.averageClosedReturnPct ?? null;
+  const latestCompletedDate = performanceSummary?.latestCompletedBatchDate
+    ? formatDate(performanceSummary.latestCompletedBatchDate)
     : "No closed batch yet";
 
   return (
@@ -1515,7 +1522,7 @@ export function Dashboard({ data, searchedAnalysis }: DashboardProps) {
               </div>
               <div className="dashboard-side-stat">
                 <span>Batch count</span>
-                <strong>{formatNumber(data.history.length)}</strong>
+                <strong>{formatNumber(archiveSummary.historyCount)}</strong>
               </div>
               <div className="dashboard-side-stat">
                 <span>Latest close</span>

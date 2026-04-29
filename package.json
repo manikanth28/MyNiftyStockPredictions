@@ -10,6 +10,9 @@
     "start:web": "npm run start --workspace web",
     "daily:market-scan": "node scripts/refresh-market-data.mjs",
     "daily:market-scan:loop": "node scripts/refresh-market-data.mjs --loop",
+    "portfolio:bot": "node scripts/portfolio-bot.mjs",
+    "portfolio:bot:loop": "node scripts/portfolio-bot.mjs --loop",
+    "portfolio:bot:report": "node scripts/portfolio-bot.mjs --report",
     "test:web": "npm run typecheck --workspace web",
     "test:api": "python -m unittest discover -s services/api/tests -t services/api"
   }

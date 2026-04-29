@@ -18,6 +18,10 @@ const NAV_ITEMS = [
   {
     href: "/portfolio",
     label: "Portfolio"
+  },
+  {
+    href: "/monitoring",
+    label: "Monitor"
   }
 ];
 
@@ -56,12 +60,18 @@ export function AppShell({ children }: { children: ReactNode }) {
             <WalletSummaryPill />
 
             <MarketRefreshButton
+              ariaLabel="Refresh all market data"
+              autoRefresh={false}
               buttonClassName="app-shell-refresh-button"
               containerClassName="app-shell-refresh"
               feedbackClassName="app-shell-refresh-feedback"
+              iconOnly
               idleLabel="Refresh all data"
               pendingLabel="Refreshing all data..."
             />
+            <div className="app-account-avatar" aria-label="Paper account" title="Paper account">
+              NR
+            </div>
           </div>
         </div>
       </header>
